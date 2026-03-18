@@ -433,3 +433,32 @@ fn outgoing_message_round_trips() {
     assert_eq!(parsed.recipient_id, "12345");
     assert_eq!(parsed.reply_to.as_deref(), Some("msg-001"));
 }
+
+// ============================================================================
+// ChannelConfigStore trait + EnvConfigStore
+// ============================================================================
+
+#[tokio::test]
+async fn env_config_store_trait_methods() {
+    use dravr_canot::config_store::ChannelConfigStore;
+    use dravr_canot::env_config_store::EnvConfigStore;
+
+    let store = EnvConfigStore::from_env();
+    let channels = store.list_configured_channels().await;
+
+    // Every listed channel should return a config
+    for ct in &channels {
+        let cfg = store.get_config(*ct).await;
+        assert!(cfg.is_some(), "listed channel {ct} should have a config");
+
+        // tenant_config with any tenant_id should also work (standalone ignores tenant)
+        let tenant_cfg = store.get_tenant_config("any-tenant", *ct).await;
+        assert!(tenant_cfg.is_some());
+    }
+
+    // Unlisted channel types should return None
+    // (at least one of these won't be configured in most envs)
+    if !channels.contains(&ChannelType::Discord) {
+        assert!(store.get_config(ChannelType::Discord).await.is_none());
+    }
+}

@@ -31,6 +31,12 @@ pub mod models;
 /// Runtime configuration loaded from environment variables
 pub mod config;
 
+/// Trait for pluggable channel configuration storage backends
+pub mod config_store;
+
+/// Environment-variable-based channel config store for standalone deployments
+pub mod env_config_store;
+
 /// Shared HTTP client for outbound API calls
 pub mod http_client;
 
@@ -66,7 +72,9 @@ pub mod channels;
 
 // Re-export primary types for consumers
 pub use channel::MessagingChannel;
+pub use config_store::ChannelConfigStore;
 pub use descriptor::ChannelDescriptor;
+pub use env_config_store::EnvConfigStore;
 pub use registry::ChannelRegistry;
 pub use renderer::ResponseRenderer;
 pub use transport::TransportAdapter;
