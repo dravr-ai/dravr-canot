@@ -251,7 +251,7 @@ jobs:
           cargo publish -p dravr-channels-server || echo "dravr-channels-server already published, continuing..."
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
           pattern: dravr-canot-*
@@ -279,7 +279,7 @@ jobs:
           token: ${{ secrets.RELEASE_PAT }}
 
       - name: Download artifacts for SHA computation
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
           pattern: dravr-canot-*
