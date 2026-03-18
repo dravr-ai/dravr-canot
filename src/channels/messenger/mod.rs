@@ -1,12 +1,12 @@
-// ABOUTME: Slack Events API channel adapter module
-// ABOUTME: Combines SlackTransport (HMAC-SHA256 v0) with SlackRenderer (Block Kit)
+// ABOUTME: Meta Messenger Platform channel adapter module
+// ABOUTME: Combines MessengerTransport (x-hub-signature-256) with MessengerRenderer (Graph API)
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright (c) 2026 dravr.ai
 
-/// Block Kit message renderer for Slack
+/// Graph API message renderer for Messenger
 pub mod renderer;
-/// HMAC-SHA256 v0 signature verification and webhook parsing for Slack
+/// HMAC-SHA256 signature verification and webhook parsing for Messenger
 pub mod transport;
 
 use crate::error::MessagingResult;
@@ -22,59 +22,59 @@ use crate::descriptor::ChannelDescriptor;
 use crate::renderer::ResponseRenderer;
 use crate::transport::TransportAdapter;
 
-use self::renderer::SlackRenderer;
-use self::transport::SlackTransport;
+use self::renderer::MessengerRenderer;
+use self::transport::MessengerTransport;
 
-/// Slack channel adapter combining transport and renderer
-pub struct SlackChannel {
-    /// Wire protocol adapter for Slack Events API
-    transport: SlackTransport,
-    /// Block Kit message renderer
-    renderer: SlackRenderer,
+/// Messenger channel adapter combining transport and renderer
+pub struct MessengerChannel {
+    /// Wire protocol adapter for Messenger Platform
+    transport: MessengerTransport,
+    /// Graph API message renderer
+    renderer: MessengerRenderer,
 }
 
-impl SlackChannel {
-    /// Create a new Slack channel adapter
+impl MessengerChannel {
+    /// Create a new Messenger channel adapter
     #[must_use]
-    pub fn new(signing_secret: String) -> Self {
+    pub fn new(app_secret: String) -> Self {
         Self {
-            transport: SlackTransport::new(signing_secret),
-            renderer: SlackRenderer,
+            transport: MessengerTransport::new(app_secret),
+            renderer: MessengerRenderer,
         }
     }
 }
 
-/// Slack channel metadata descriptor
-pub struct SlackDescriptor;
+/// Messenger channel metadata descriptor
+pub struct MessengerDescriptor;
 
-impl ChannelDescriptor for SlackDescriptor {
+impl ChannelDescriptor for MessengerDescriptor {
     fn name(&self) -> &'static str {
-        "slack"
+        "messenger"
     }
     fn display_name(&self) -> &'static str {
-        "Slack"
+        "Messenger"
     }
     fn channel_type(&self) -> ChannelType {
-        ChannelType::Slack
+        ChannelType::Messenger
     }
     fn webhook_path(&self) -> &'static str {
-        "/api/messaging/webhook/slack"
+        "/api/messaging/webhook/messenger"
     }
     fn supports_media(&self) -> bool {
         true
     }
     fn max_message_length(&self) -> usize {
-        40000
+        2000
     }
     fn signature_header(&self) -> &'static str {
-        "x-slack-signature"
+        "x-hub-signature-256"
     }
 }
 
 #[async_trait]
-impl MessagingChannel for SlackChannel {
+impl MessagingChannel for MessengerChannel {
     fn channel_type(&self) -> ChannelType {
-        ChannelType::Slack
+        ChannelType::Messenger
     }
 
     fn verify_signature(&self, headers: &HeaderMap, body: &[u8]) -> MessagingResult<()> {

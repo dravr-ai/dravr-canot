@@ -9,12 +9,12 @@ pub mod renderer;
 /// HMAC-SHA256 signature verification and webhook parsing for `WhatsApp`
 pub mod transport;
 
-use async_trait::async_trait;
-use http::HeaderMap;
 use crate::error::MessagingResult;
 use crate::models::{
     ChannelConfig, ChannelType, DeliveryReceipt, IncomingMessage, OutgoingMessage,
 };
+use async_trait::async_trait;
+use http::HeaderMap;
 use serde_json::Value;
 
 use crate::channel::MessagingChannel;

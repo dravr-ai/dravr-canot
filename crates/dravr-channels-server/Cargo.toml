@@ -1,38 +1,39 @@
-# ABOUTME: MCP server crate exposing dravr-channels messaging via Model Context Protocol
-# ABOUTME: Supports stdio and HTTP/SSE transports with channel management and message sending tools
+# ABOUTME: Unified REST API + MCP server for dravr-channels messaging
+# ABOUTME: Serves webhook endpoints, message sending API, and MCP over HTTP
 #
 # SPDX-License-Identifier: MIT OR Apache-2.0
 # Copyright (c) 2026 dravr.ai
 
 [package]
-name = "dravr-channels-mcp"
+name = "dravr-channels-server"
 version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
-description = "MCP server for dravr-channels — expose messaging channels via Model Context Protocol"
+description = "Unified REST API + MCP server for multi-platform messaging"
 repository = "https://github.com/dravr-ai/dravr-channels"
-keywords = ["mcp", "messaging", "whatsapp", "slack", "discord"]
+keywords = ["messaging", "rest", "mcp", "webhook", "server"]
 categories = ["web-programming::http-server"]
 
 [lib]
-name = "dravr_channels_mcp"
+name = "dravr_channels_server"
 path = "src/lib.rs"
 
 [[bin]]
-name = "dravr-channels-mcp"
+name = "dravr-channels-server"
 path = "src/main.rs"
 
 [dependencies]
 dravr-channels = { path = "../..", version = "0.1.0", features = ["all-channels"] }
-async-trait = "0.1"
+dravr-channels-mcp = { path = "../dravr-channels-mcp", version = "0.1.0" }
 axum = "0.8"
 clap = { version = "4", features = ["derive"] }
-futures = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1.45", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+subtle = "2"
+http = "1.4"
 uuid = { version = "1.22", features = ["v4"] }
 
 [dev-dependencies]

@@ -20,5 +20,8 @@ use crate::server::McpServer;
 #[async_trait]
 pub trait McpTransport: Send {
     /// Start serving MCP requests, blocking until the transport shuts down
-    async fn serve(self, server: Arc<McpServer>) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
+    async fn serve(
+        self,
+        server: Arc<McpServer>,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
 }

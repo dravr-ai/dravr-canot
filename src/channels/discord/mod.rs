@@ -1,12 +1,12 @@
-// ABOUTME: Slack Events API channel adapter module
-// ABOUTME: Combines SlackTransport (HMAC-SHA256 v0) with SlackRenderer (Block Kit)
+// ABOUTME: Discord Bot API channel adapter module
+// ABOUTME: Combines DiscordTransport (Ed25519 verification) with DiscordRenderer (embeds)
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright (c) 2026 dravr.ai
 
-/// Block Kit message renderer for Slack
+/// Embed-based message renderer for Discord
 pub mod renderer;
-/// HMAC-SHA256 v0 signature verification and webhook parsing for Slack
+/// Ed25519 signature verification and webhook parsing for Discord
 pub mod transport;
 
 use crate::error::MessagingResult;
@@ -22,59 +22,59 @@ use crate::descriptor::ChannelDescriptor;
 use crate::renderer::ResponseRenderer;
 use crate::transport::TransportAdapter;
 
-use self::renderer::SlackRenderer;
-use self::transport::SlackTransport;
+use self::renderer::DiscordRenderer;
+use self::transport::DiscordTransport;
 
-/// Slack channel adapter combining transport and renderer
-pub struct SlackChannel {
-    /// Wire protocol adapter for Slack Events API
-    transport: SlackTransport,
-    /// Block Kit message renderer
-    renderer: SlackRenderer,
+/// Discord channel adapter combining transport and renderer
+pub struct DiscordChannel {
+    /// Wire protocol adapter for Discord API
+    transport: DiscordTransport,
+    /// Embed-based message renderer
+    renderer: DiscordRenderer,
 }
 
-impl SlackChannel {
-    /// Create a new Slack channel adapter
+impl DiscordChannel {
+    /// Create a new Discord channel adapter
     #[must_use]
-    pub fn new(signing_secret: String) -> Self {
+    pub fn new(public_key_hex: String, application_id: String) -> Self {
         Self {
-            transport: SlackTransport::new(signing_secret),
-            renderer: SlackRenderer,
+            transport: DiscordTransport::new(public_key_hex, application_id),
+            renderer: DiscordRenderer,
         }
     }
 }
 
-/// Slack channel metadata descriptor
-pub struct SlackDescriptor;
+/// Discord channel metadata descriptor
+pub struct DiscordDescriptor;
 
-impl ChannelDescriptor for SlackDescriptor {
+impl ChannelDescriptor for DiscordDescriptor {
     fn name(&self) -> &'static str {
-        "slack"
+        "discord"
     }
     fn display_name(&self) -> &'static str {
-        "Slack"
+        "Discord"
     }
     fn channel_type(&self) -> ChannelType {
-        ChannelType::Slack
+        ChannelType::Discord
     }
     fn webhook_path(&self) -> &'static str {
-        "/api/messaging/webhook/slack"
+        "/api/messaging/webhook/discord"
     }
     fn supports_media(&self) -> bool {
         true
     }
     fn max_message_length(&self) -> usize {
-        40000
+        2000
     }
     fn signature_header(&self) -> &'static str {
-        "x-slack-signature"
+        "x-signature-ed25519"
     }
 }
 
 #[async_trait]
-impl MessagingChannel for SlackChannel {
+impl MessagingChannel for DiscordChannel {
     fn channel_type(&self) -> ChannelType {
-        ChannelType::Slack
+        ChannelType::Discord
     }
 
     fn verify_signature(&self, headers: &HeaderMap, body: &[u8]) -> MessagingResult<()> {

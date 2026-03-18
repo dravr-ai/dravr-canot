@@ -1,12 +1,12 @@
-// ABOUTME: Slack Events API channel adapter module
-// ABOUTME: Combines SlackTransport (HMAC-SHA256 v0) with SlackRenderer (Block Kit)
+// ABOUTME: Telegram Bot API channel adapter module
+// ABOUTME: Combines TelegramTransport (secret token) with TelegramRenderer (HTML parse mode)
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright (c) 2026 dravr.ai
 
-/// Block Kit message renderer for Slack
+/// HTML parse mode message renderer for Telegram
 pub mod renderer;
-/// HMAC-SHA256 v0 signature verification and webhook parsing for Slack
+/// Secret token verification and webhook parsing for Telegram
 pub mod transport;
 
 use crate::error::MessagingResult;
@@ -22,59 +22,59 @@ use crate::descriptor::ChannelDescriptor;
 use crate::renderer::ResponseRenderer;
 use crate::transport::TransportAdapter;
 
-use self::renderer::SlackRenderer;
-use self::transport::SlackTransport;
+use self::renderer::TelegramRenderer;
+use self::transport::TelegramTransport;
 
-/// Slack channel adapter combining transport and renderer
-pub struct SlackChannel {
-    /// Wire protocol adapter for Slack Events API
-    transport: SlackTransport,
-    /// Block Kit message renderer
-    renderer: SlackRenderer,
+/// Telegram channel adapter combining transport and renderer
+pub struct TelegramChannel {
+    /// Wire protocol adapter for Telegram Bot API
+    transport: TelegramTransport,
+    /// HTML-based message renderer
+    renderer: TelegramRenderer,
 }
 
-impl SlackChannel {
-    /// Create a new Slack channel adapter
+impl TelegramChannel {
+    /// Create a new Telegram channel adapter
     #[must_use]
-    pub fn new(signing_secret: String) -> Self {
+    pub fn new(webhook_secret: String) -> Self {
         Self {
-            transport: SlackTransport::new(signing_secret),
-            renderer: SlackRenderer,
+            transport: TelegramTransport::new(webhook_secret),
+            renderer: TelegramRenderer,
         }
     }
 }
 
-/// Slack channel metadata descriptor
-pub struct SlackDescriptor;
+/// Telegram channel metadata descriptor
+pub struct TelegramDescriptor;
 
-impl ChannelDescriptor for SlackDescriptor {
+impl ChannelDescriptor for TelegramDescriptor {
     fn name(&self) -> &'static str {
-        "slack"
+        "telegram"
     }
     fn display_name(&self) -> &'static str {
-        "Slack"
+        "Telegram"
     }
     fn channel_type(&self) -> ChannelType {
-        ChannelType::Slack
+        ChannelType::Telegram
     }
     fn webhook_path(&self) -> &'static str {
-        "/api/messaging/webhook/slack"
+        "/api/messaging/webhook/telegram"
     }
     fn supports_media(&self) -> bool {
         true
     }
     fn max_message_length(&self) -> usize {
-        40000
+        4096
     }
     fn signature_header(&self) -> &'static str {
-        "x-slack-signature"
+        "x-telegram-bot-api-secret-token"
     }
 }
 
 #[async_trait]
-impl MessagingChannel for SlackChannel {
+impl MessagingChannel for TelegramChannel {
     fn channel_type(&self) -> ChannelType {
-        ChannelType::Slack
+        ChannelType::Telegram
     }
 
     fn verify_signature(&self, headers: &HeaderMap, body: &[u8]) -> MessagingResult<()> {

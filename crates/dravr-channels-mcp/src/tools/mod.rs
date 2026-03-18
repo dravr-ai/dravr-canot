@@ -1,62 +1,37 @@
-// ABOUTME: Tool registry for MCP tool definitions and dispatch
-// ABOUTME: Maps tool names to async handler functions for channels management
+// ABOUTME: Tool registry that maps MCP tool names to handler implementations
+// ABOUTME: Provides the McpTool trait and ToolRegistry for tool discovery and dispatch
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright (c) 2026 dravr.ai
 
-use std::collections::HashMap;
-use std::future::Future;
-use std::pin::Pin;
-use std::sync::Arc;
+pub mod channels;
+pub mod config;
+pub mod send;
 
+use std::collections::HashMap;
+
+use async_trait::async_trait;
 use serde_json::Value;
 
 use crate::protocol::{CallToolResult, ToolDefinition};
 use crate::state::SharedState;
 
-/// Type alias for an async tool handler function
-pub type ToolHandler = Arc<
-    dyn Fn(SharedState, Value) -> Pin<Box<dyn Future<Output = CallToolResult> + Send>>
-        + Send
-        + Sync,
->;
+/// Trait implemented by each MCP tool exposed by this server
+#[async_trait]
+pub trait McpTool: Send + Sync {
+    /// Return the tool's MCP definition (name, description, input schema)
+    fn definition(&self) -> ToolDefinition;
 
-/// Registry mapping tool names to their definitions and handlers
-pub struct ToolRegistry {
-    tools: HashMap<String, (ToolDefinition, ToolHandler)>,
+    /// Execute the tool with the given arguments against the shared server state
+    async fn execute(&self, state: &SharedState, arguments: Value) -> CallToolResult;
 }
 
-impl ToolRegistry {
-    /// Create an empty tool registry
-    pub fn new() -> Self {
-        Self {
-            tools: HashMap::new(),
-        }
-    }
-
-    /// Register a tool with its definition and handler
-    pub fn register(&mut self, definition: ToolDefinition, handler: ToolHandler) {
-        self.tools
-            .insert(definition.name.clone(), (definition, handler));
-    }
-
-    /// List all registered tool definitions
-    pub fn list_definitions(&self) -> Vec<ToolDefinition> {
-        self.tools.values().map(|(def, _)| def.clone()).collect()
-    }
-
-    /// Execute a tool by name with the given arguments
-    pub async fn execute(
-        &self,
-        name: &str,
-        state: &SharedState,
-        arguments: Value,
-    ) -> CallToolResult {
-        match self.tools.get(name) {
-            Some((_, handler)) => handler(Arc::clone(state), arguments).await,
-            None => CallToolResult::error(format!("Unknown tool: {name}")),
-        }
-    }
+/// Registry mapping tool names to their handler implementations
+///
+/// Tools are registered at server startup and looked up by name
+/// when `tools/call` requests arrive from the MCP client.
+pub struct ToolRegistry {
+    tools: HashMap<String, Box<dyn McpTool>>,
 }
 
 impl Default for ToolRegistry {
@@ -65,7 +40,45 @@ impl Default for ToolRegistry {
     }
 }
 
-/// Build the default tool registry with messaging channel tools
+impl ToolRegistry {
+    /// Create an empty registry
+    pub fn new() -> Self {
+        Self {
+            tools: HashMap::new(),
+        }
+    }
+
+    /// Register a tool handler, keyed by its definition name
+    pub fn register(&mut self, tool: Box<dyn McpTool>) {
+        let name = tool.definition().name;
+        self.tools.insert(name, tool);
+    }
+
+    /// List all registered tool definitions for `tools/list` responses
+    pub fn list_definitions(&self) -> Vec<ToolDefinition> {
+        self.tools.values().map(|t| t.definition()).collect()
+    }
+
+    /// Dispatch a `tools/call` to the named tool handler
+    pub async fn execute(
+        &self,
+        name: &str,
+        state: &SharedState,
+        arguments: Value,
+    ) -> CallToolResult {
+        match self.tools.get(name) {
+            Some(tool) => tool.execute(state, arguments).await,
+            None => CallToolResult::error(format!("Unknown tool: {name}")),
+        }
+    }
+}
+
+/// Build the default tool registry with all dravr-channels MCP tools
 pub fn build_tool_registry() -> ToolRegistry {
-    ToolRegistry::new()
+    let mut registry = ToolRegistry::new();
+    registry.register(Box::new(channels::ListChannels));
+    registry.register(Box::new(send::SendMessage));
+    registry.register(Box::new(config::GetChannelConfig));
+    registry.register(Box::new(config::SetChannelConfig));
+    registry
 }

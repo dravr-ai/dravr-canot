@@ -4,13 +4,13 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright (c) 2026 dravr.ai
 
-use async_trait::async_trait;
-use chrono::Utc;
-use http::HeaderMap;
 use crate::error::{MessagingError, MessagingResult};
 use crate::models::{
     ChannelConfig, ChannelType, DeliveryReceipt, DeliveryStatus, IncomingMessage, MessageContent,
 };
+use async_trait::async_trait;
+use chrono::Utc;
+use http::HeaderMap;
 use serde_json::Value;
 use uuid::Uuid;
 

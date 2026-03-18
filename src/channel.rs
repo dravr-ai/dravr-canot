@@ -9,7 +9,9 @@ use http::HeaderMap;
 use serde_json::Value;
 
 use crate::error::MessagingResult;
-use crate::models::{ChannelConfig, ChannelType, DeliveryReceipt, IncomingMessage, OutgoingMessage};
+use crate::models::{
+    ChannelConfig, ChannelType, DeliveryReceipt, IncomingMessage, OutgoingMessage,
+};
 
 /// Unified messaging channel interface
 ///
