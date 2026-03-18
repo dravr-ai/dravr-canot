@@ -67,7 +67,7 @@ redundant_pub_crate = "allow"
 
 [package]
 name = "dravr-canot"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Unified multi-platform messaging library for WhatsApp, Slack, Discord, Telegram, and Messenger"
