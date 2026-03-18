@@ -7,7 +7,7 @@
 FROM rust:1-bookworm AS builder
 WORKDIR /build
 COPY . .
-RUN cargo build --release -p dravr-channels-server -p dravr-channels-mcp
+RUN cargo build --release -p dravr-channels-server -p dravr-channels-mcp --features all-channels
 
 FROM debian:bookworm-slim
 

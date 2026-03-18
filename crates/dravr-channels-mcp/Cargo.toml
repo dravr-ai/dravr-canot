@@ -10,7 +10,7 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "MCP server for dravr-channels — expose messaging channels via Model Context Protocol"
-repository = "https://github.com/dravr-ai/dravr-channels"
+repository = "https://github.com/dravr-ai/dravr-canot"
 keywords = ["mcp", "messaging", "whatsapp", "slack", "discord"]
 categories = ["web-programming::http-server"]
 
@@ -22,8 +22,17 @@ path = "src/lib.rs"
 name = "dravr-channels-mcp"
 path = "src/main.rs"
 
+[features]
+default = ["all-channels"]
+channel-whatsapp = ["dravr-channels/channel-whatsapp"]
+channel-messenger = ["dravr-channels/channel-messenger"]
+channel-discord = ["dravr-channels/channel-discord"]
+channel-slack = ["dravr-channels/channel-slack"]
+channel-telegram = ["dravr-channels/channel-telegram"]
+all-channels = ["channel-whatsapp", "channel-messenger", "channel-discord", "channel-slack", "channel-telegram"]
+
 [dependencies]
-dravr-channels = { path = "../..", version = "0.1.0", features = ["all-channels"] }
+dravr-channels = { path = "../..", version = "0.1.0" }
 async-trait = "0.1"
 axum = "0.8"
 clap = { version = "4", features = ["derive"] }

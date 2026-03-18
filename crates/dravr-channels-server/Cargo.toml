@@ -10,7 +10,7 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Unified REST API + MCP server for multi-platform messaging"
-repository = "https://github.com/dravr-ai/dravr-channels"
+repository = "https://github.com/dravr-ai/dravr-canot"
 keywords = ["messaging", "rest", "mcp", "webhook", "server"]
 categories = ["web-programming::http-server"]
 
@@ -22,9 +22,18 @@ path = "src/lib.rs"
 name = "dravr-channels-server"
 path = "src/main.rs"
 
+[features]
+default = ["all-channels"]
+channel-whatsapp = ["dravr-channels/channel-whatsapp", "dravr-channels-mcp/channel-whatsapp"]
+channel-messenger = ["dravr-channels/channel-messenger", "dravr-channels-mcp/channel-messenger"]
+channel-discord = ["dravr-channels/channel-discord", "dravr-channels-mcp/channel-discord"]
+channel-slack = ["dravr-channels/channel-slack", "dravr-channels-mcp/channel-slack"]
+channel-telegram = ["dravr-channels/channel-telegram", "dravr-channels-mcp/channel-telegram"]
+all-channels = ["channel-whatsapp", "channel-messenger", "channel-discord", "channel-slack", "channel-telegram"]
+
 [dependencies]
-dravr-channels = { path = "../..", version = "0.1.0", features = ["all-channels"] }
-dravr-channels-mcp = { path = "../dravr-channels-mcp", version = "0.1.0" }
+dravr-channels = { path = "../..", version = "0.1.0" }
+dravr-channels-mcp = { path = "../dravr-channels-mcp", version = "0.1.0", default-features = false }
 axum = "0.8"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
