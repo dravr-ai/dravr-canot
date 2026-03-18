@@ -364,7 +364,7 @@ dependencies = [
 
 [[package]]
 name = "dravr-canot"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -386,7 +386,7 @@ dependencies = [
 
 [[package]]
 name = "dravr-canot-mcp"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -403,7 +403,7 @@ dependencies = [
 
 [[package]]
 name = "dravr-canot-server"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "axum",
  "clap",
