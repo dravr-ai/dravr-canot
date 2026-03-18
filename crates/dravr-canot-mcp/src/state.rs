@@ -69,16 +69,31 @@ mod tests {
         assert!(state.registry().is_empty());
     }
 
+    fn test_config(channel_type: ChannelType, api_key: &str) -> ChannelConfig {
+        ChannelConfig {
+            id: "test-id".to_owned(),
+            tenant_id: "test-tenant".to_owned(),
+            channel_type,
+            api_key: Some(api_key.to_owned()),
+            api_secret: None,
+            webhook_secret: None,
+            verify_token: None,
+            account_id: None,
+            phone_number: None,
+            bot_token: None,
+            is_active: true,
+        }
+    }
+
     #[test]
     fn config_round_trip() {
         let mut state = ServerState::default();
         assert!(state.get_config(&ChannelType::WhatsApp).is_none());
 
-        let config = ChannelConfig {
-            api_key: Some("test-key".to_owned()),
-            ..ChannelConfig::default()
-        };
-        state.set_config(ChannelType::WhatsApp, config);
+        state.set_config(
+            ChannelType::WhatsApp,
+            test_config(ChannelType::WhatsApp, "test-key"),
+        );
 
         let retrieved = state.get_config(&ChannelType::WhatsApp).expect("config");
         assert_eq!(retrieved.api_key.as_deref(), Some("test-key"));
@@ -88,17 +103,8 @@ mod tests {
     fn set_config_replaces_existing() {
         let mut state = ServerState::default();
 
-        let config1 = ChannelConfig {
-            api_key: Some("key-1".to_owned()),
-            ..ChannelConfig::default()
-        };
-        state.set_config(ChannelType::Slack, config1);
-
-        let config2 = ChannelConfig {
-            api_key: Some("key-2".to_owned()),
-            ..ChannelConfig::default()
-        };
-        state.set_config(ChannelType::Slack, config2);
+        state.set_config(ChannelType::Slack, test_config(ChannelType::Slack, "key-1"));
+        state.set_config(ChannelType::Slack, test_config(ChannelType::Slack, "key-2"));
 
         let retrieved = state.get_config(&ChannelType::Slack).expect("config");
         assert_eq!(retrieved.api_key.as_deref(), Some("key-2"));

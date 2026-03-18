@@ -143,13 +143,16 @@ impl McpTool for SetChannelConfig {
             Err(e) => return CallToolResult::error(format!("Invalid channel_type: {e}")),
         };
 
+        let tenant_id = arguments
+            .get("tenant_id")
+            .and_then(Value::as_str)
+            .unwrap_or("default")
+            .to_owned();
+
         let config = ChannelConfig {
-            id: None,
-            tenant_id: arguments
-                .get("tenant_id")
-                .and_then(Value::as_str)
-                .map(String::from),
-            channel_type: Some(channel_type),
+            id: format!("mcp-{channel_type_str}"),
+            tenant_id,
+            channel_type,
             api_key: arguments
                 .get("api_key")
                 .and_then(Value::as_str)

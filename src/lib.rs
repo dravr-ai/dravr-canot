@@ -28,6 +28,9 @@ pub mod error;
 /// Data models: channel types, messages, delivery receipts, configuration
 pub mod models;
 
+/// Runtime configuration loaded from environment variables
+pub mod config;
+
 /// Shared HTTP client for outbound API calls
 pub mod http_client;
 

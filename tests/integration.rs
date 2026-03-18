@@ -1,10 +1,13 @@
 // ABOUTME: Integration tests for dravr-canot core library
-// ABOUTME: Tests registry, factory, models, and channel trait interactions
+// ABOUTME: Tests registry, factory, models, config, and channel trait interactions
 
+use dravr_canot::config::MessagingConfig;
 use dravr_canot::error::MessagingError;
 use dravr_canot::models::{
-    CardAction, ChannelConfig, ChannelType, DeliveryStatus, MessageContent, OutgoingMessage,
-    WebhookTimestampPolicy, RETRY_DELAYS_SECS,
+    CardAction, ChannelConfig, ChannelType, DeliveryStatus, LinkingMethod, MessageContent,
+    MessagingChannelLink, MessagingLinkState, MessagingSession, OutboundQueueEntry,
+    OutgoingMessage, WebhookTimestampPolicy, LINK_CODE_TTL_MINUTES, MAX_OTP_ATTEMPTS,
+    MAX_OTP_FLOWS_PER_HOUR, OTP_TTL_MINUTES, RETRY_DELAYS_SECS,
 };
 use dravr_canot::registry::ChannelRegistry;
 use std::str::FromStr;
@@ -40,6 +43,47 @@ fn channel_type_case_insensitive() {
 #[test]
 fn channel_type_unknown_returns_error() {
     assert!(ChannelType::from_str("sms").is_err());
+}
+
+// ============================================================================
+// Linking method
+// ============================================================================
+
+#[test]
+fn channel_type_linking_methods() {
+    assert_eq!(
+        ChannelType::Telegram.linking_method(),
+        LinkingMethod::DeepLink
+    );
+    assert_eq!(
+        ChannelType::WhatsApp.linking_method(),
+        LinkingMethod::DeepLink
+    );
+    assert_eq!(ChannelType::Slack.linking_method(), LinkingMethod::OAuth);
+    assert_eq!(ChannelType::Discord.linking_method(), LinkingMethod::OAuth);
+    assert_eq!(
+        ChannelType::Messenger.linking_method(),
+        LinkingMethod::OAuth
+    );
+}
+
+#[test]
+fn linking_method_round_trip() {
+    assert_eq!(
+        LinkingMethod::from_str("deep_link").unwrap(),
+        LinkingMethod::DeepLink
+    );
+    assert_eq!(
+        LinkingMethod::from_str("oauth").unwrap(),
+        LinkingMethod::OAuth
+    );
+    assert_eq!(LinkingMethod::DeepLink.to_string(), "deep_link");
+    assert_eq!(LinkingMethod::OAuth.to_string(), "oauth");
+}
+
+#[test]
+fn linking_method_unknown_returns_error() {
+    assert!(LinkingMethod::from_str("magic_link").is_err());
 }
 
 // ============================================================================
@@ -112,14 +156,31 @@ fn card_content_with_actions() {
 }
 
 // ============================================================================
-// ChannelConfig defaults
+// ChannelConfig
 // ============================================================================
 
 #[test]
-fn channel_config_default_is_active() {
-    let config: ChannelConfig = serde_json::from_str("{}").unwrap();
-    assert!(config.is_active);
-    assert!(config.api_key.is_none());
+fn channel_config_round_trips() {
+    let config = ChannelConfig {
+        id: "cfg-001".into(),
+        tenant_id: "tenant-1".into(),
+        channel_type: ChannelType::Slack,
+        api_key: Some("xoxb-test".into()),
+        api_secret: None,
+        webhook_secret: Some("secret".into()),
+        verify_token: None,
+        account_id: None,
+        phone_number: None,
+        bot_token: None,
+        is_active: true,
+    };
+    let json = serde_json::to_string(&config).unwrap();
+    let parsed: ChannelConfig = serde_json::from_str(&json).unwrap();
+    assert_eq!(parsed.id, "cfg-001");
+    assert_eq!(parsed.tenant_id, "tenant-1");
+    assert_eq!(parsed.channel_type, ChannelType::Slack);
+    assert!(parsed.is_active);
+    assert_eq!(parsed.api_key.as_deref(), Some("xoxb-test"));
 }
 
 // ============================================================================
@@ -186,6 +247,13 @@ fn retryable_errors() {
     };
     assert!(err.is_retryable());
 
+    let err = MessagingError::RateLimitExceeded {
+        channel: "slack".into(),
+        retry_after_secs: 60,
+    };
+    assert!(err.is_retryable());
+    assert_eq!(err.retry_after_secs(), Some(60));
+
     let err = MessagingError::ChannelApiError {
         channel: "slack".into(),
         status_code: 429,
@@ -197,6 +265,18 @@ fn retryable_errors() {
         channel: "slack".into(),
         status_code: 400,
         message: "bad request".into(),
+    };
+    assert!(!err.is_retryable());
+}
+
+#[test]
+fn non_retryable_errors() {
+    let err = MessagingError::LinkCodeExpired;
+    assert!(!err.is_retryable());
+    assert!(err.retry_after_secs().is_none());
+
+    let err = MessagingError::SessionNotFound {
+        session_id: "sess-1".into(),
     };
     assert!(!err.is_retryable());
 }
@@ -213,9 +293,123 @@ fn retry_constants_are_sane() {
 }
 
 #[test]
+fn linking_and_otp_constants() {
+    assert_eq!(LINK_CODE_TTL_MINUTES, 10);
+    assert_eq!(OTP_TTL_MINUTES, 10);
+    assert_eq!(MAX_OTP_ATTEMPTS, 3);
+    assert_eq!(MAX_OTP_FLOWS_PER_HOUR, 5);
+}
+
+#[test]
 fn default_timestamp_policy() {
     let policy = WebhookTimestampPolicy::default();
     assert_eq!(policy.max_age_secs, 300);
+}
+
+// ============================================================================
+// Config from env
+// ============================================================================
+
+#[test]
+fn messaging_config_defaults() {
+    let config = MessagingConfig::from_env();
+    assert_eq!(config.max_retry_attempts, 3);
+    assert_eq!(config.retry_delays_secs, vec![1, 5, 30]);
+    assert_eq!(config.link_code_ttl_minutes, 10);
+    assert_eq!(config.otp_ttl_minutes, 10);
+    assert_eq!(config.max_otp_attempts, 3);
+    assert_eq!(config.max_otp_flows_per_hour, 5);
+}
+
+// ============================================================================
+// Session model
+// ============================================================================
+
+#[test]
+fn messaging_session_round_trips() {
+    let session = MessagingSession {
+        id: "sess-001".into(),
+        user_id: "user-1".into(),
+        tenant_id: "tenant-1".into(),
+        channel_type: ChannelType::WhatsApp,
+        channel_user_id: "+15551234567".into(),
+        channel_conversation_id: None,
+        conversation_id: Some("conv-abc".into()),
+        last_message_at: chrono::Utc::now(),
+    };
+    let json = serde_json::to_string(&session).unwrap();
+    let parsed: MessagingSession = serde_json::from_str(&json).unwrap();
+    assert_eq!(parsed.id, "sess-001");
+    assert_eq!(parsed.channel_type, ChannelType::WhatsApp);
+    assert_eq!(parsed.channel_user_id, "+15551234567");
+}
+
+// ============================================================================
+// Link state model
+// ============================================================================
+
+#[test]
+fn messaging_link_state_round_trips() {
+    let now = chrono::Utc::now();
+    let state = MessagingLinkState {
+        id: "link-001".into(),
+        tenant_id: "tenant-1".into(),
+        user_id: "user-1".into(),
+        channel_type: ChannelType::Telegram,
+        code: "ABC123".into(),
+        method: LinkingMethod::DeepLink,
+        used: false,
+        expires_at: now,
+        created_at: now,
+    };
+    let json = serde_json::to_string(&state).unwrap();
+    let parsed: MessagingLinkState = serde_json::from_str(&json).unwrap();
+    assert_eq!(parsed.code, "ABC123");
+    assert_eq!(parsed.method, LinkingMethod::DeepLink);
+    assert!(!parsed.used);
+}
+
+// ============================================================================
+// Channel link model
+// ============================================================================
+
+#[test]
+fn messaging_channel_link_round_trips() {
+    let link = MessagingChannelLink {
+        id: "cl-001".into(),
+        tenant_id: "tenant-1".into(),
+        user_id: "user-1".into(),
+        channel_type: ChannelType::Discord,
+        channel_user_id: "123456789".into(),
+        display_name: Some("TestUser#1234".into()),
+        linked_at: chrono::Utc::now(),
+    };
+    let json = serde_json::to_string(&link).unwrap();
+    let parsed: MessagingChannelLink = serde_json::from_str(&json).unwrap();
+    assert_eq!(parsed.channel_user_id, "123456789");
+    assert_eq!(parsed.display_name.as_deref(), Some("TestUser#1234"));
+}
+
+// ============================================================================
+// Outbound queue entry
+// ============================================================================
+
+#[test]
+fn outbound_queue_entry_round_trips() {
+    let entry = OutboundQueueEntry {
+        id: "q-001".into(),
+        message_id: "msg-001".into(),
+        tenant_id: "tenant-1".into(),
+        channel_type: ChannelType::Slack,
+        payload: serde_json::json!({"text": "hello"}),
+        status: "pending".into(),
+        attempt_count: 0,
+        next_retry_at: None,
+    };
+    let json = serde_json::to_string(&entry).unwrap();
+    let parsed: OutboundQueueEntry = serde_json::from_str(&json).unwrap();
+    assert_eq!(parsed.id, "q-001");
+    assert_eq!(parsed.attempt_count, 0);
 }
 
 // ============================================================================
