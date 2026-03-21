@@ -87,7 +87,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 default = []
 channel-whatsapp = []
 channel-messenger = []
-channel-discord = ["dep:ed25519-dalek"]
+channel-discord = ["dep:ed25519-dalek", "dep:tokio-tungstenite", "dep:futures-util", "dep:tokio"]
 channel-slack = []
 channel-telegram = []
 all-channels = ["channel-whatsapp", "channel-messenger", "channel-discord", "channel-slack", "channel-telegram"]
@@ -110,6 +110,11 @@ thiserror = "2"
 
 # Discord Ed25519 signature verification
 ed25519-dalek = { version = "2.2", optional = true }
+
+# Discord Gateway WebSocket client
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"], optional = true }
+futures-util = { version = "0.3", optional = true }
+tokio = { version = "1.45", features = ["rt", "time", "sync", "macros"], optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.45", features = ["full", "test-util"] }

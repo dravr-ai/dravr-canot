@@ -4,6 +4,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright (c) 2026 dravr.ai
 
+/// Discord Gateway WebSocket client for real-time message events
+pub mod gateway;
 /// Embed-based message renderer for Discord
 pub mod renderer;
 /// Ed25519 signature verification and webhook parsing for Discord
