@@ -28,7 +28,7 @@ const OPCODE_HELLO: u64 = 10;
 const OPCODE_HEARTBEAT_ACK: u64 = 11;
 
 /// Discord Gateway intents bitmask
-/// GUILDS (1 << 0) | GUILD_MESSAGES (1 << 9) | MESSAGE_CONTENT (1 << 15) | DIRECT_MESSAGES (1 << 12)
+/// `GUILDS` (1 << 0) | `GUILD_MESSAGES` (1 << 9) | `MESSAGE_CONTENT` (1 << 15) | `DIRECT_MESSAGES` (1 << 12)
 const GATEWAY_INTENTS: u64 = (1 << 0) | (1 << 9) | (1 << 12) | (1 << 15);
 
 /// Discord Gateway URL
@@ -71,64 +71,50 @@ impl GatewayConfig {
 ///
 /// Automatically reconnects on disconnection with exponential backoff.
 /// Returns when the sender is dropped or after exhausting reconnect attempts.
-pub async fn start_gateway(
-    config: GatewayConfig,
-    tx: mpsc::Sender<IncomingMessage>,
-) {
+pub async fn start_gateway(config: GatewayConfig, tx: mpsc::Sender<IncomingMessage>) {
     let mut reconnect_attempts: u32 = 0;
     let mut session_config = config;
 
     loop {
-        match run_gateway_session(&mut session_config, &tx).await {
-            GatewaySessionOutcome::Disconnected => {
-                reconnect_attempts += 1;
-                if reconnect_attempts > MAX_RECONNECT_ATTEMPTS {
-                    error!(
-                        attempts = reconnect_attempts,
-                        "Discord Gateway: max reconnect attempts exhausted, stopping"
-                    );
-                    return;
-                }
-                let delay = calculate_backoff_delay(reconnect_attempts);
-                warn!(
-                    attempt = reconnect_attempts,
-                    delay_secs = delay.as_secs(),
-                    "Discord Gateway: disconnected, reconnecting"
-                );
-                tokio::time::sleep(delay).await;
-            }
-            GatewaySessionOutcome::Fatal => {
-                error!("Discord Gateway: fatal error, stopping");
-                return;
-            }
-            GatewaySessionOutcome::SenderClosed => {
-                info!("Discord Gateway: message channel closed, stopping");
-                return;
-            }
+        let outcome = run_gateway_session(&mut session_config, &tx).await;
+        reconnect_attempts += 1;
+        if reconnect_attempts > MAX_RECONNECT_ATTEMPTS {
+            error!(
+                attempts = reconnect_attempts,
+                "Discord Gateway: max reconnect attempts exhausted, stopping"
+            );
+            return;
         }
+        let delay = calculate_backoff_delay(reconnect_attempts);
+        warn!(
+            attempt = reconnect_attempts,
+            delay_secs = delay.as_secs(),
+            reason = ?outcome,
+            "Discord Gateway: disconnected, reconnecting"
+        );
+        tokio::time::sleep(delay).await;
     }
 }
 
-/// Outcome of a single Gateway WebSocket session
-enum GatewaySessionOutcome {
-    /// Connection lost, should reconnect
-    Disconnected,
-    /// Fatal error, should not reconnect
-    Fatal,
-    /// The mpsc sender was dropped (receiver gone)
-    SenderClosed,
+/// Reason for Gateway session disconnection
+#[derive(Debug)]
+enum DisconnectReason {
+    /// WebSocket connection lost
+    ConnectionLost,
+    /// Receiver dropped (no one listening for messages)
+    ReceiverDropped,
 }
 
 /// Run a single Gateway WebSocket session until disconnection
 async fn run_gateway_session(
     config: &mut GatewayConfig,
     tx: &mpsc::Sender<IncomingMessage>,
-) -> GatewaySessionOutcome {
+) -> DisconnectReason {
     let (ws_stream, _) = match connect_async(GATEWAY_URL).await {
         Ok(conn) => conn,
         Err(e) => {
             error!(error = %e, "Discord Gateway: WebSocket connection failed");
-            return GatewaySessionOutcome::Disconnected;
+            return DisconnectReason::ConnectionLost;
         }
     };
 
@@ -137,18 +123,12 @@ async fn run_gateway_session(
     let (mut write, mut read) = ws_stream.split();
 
     // Wait for HELLO to get heartbeat interval
-    let heartbeat_interval_ms = match read_hello(&mut read).await {
-        Some(interval_ms) => interval_ms,
-        None => {
-            error!("Discord Gateway: did not receive HELLO");
-            return GatewaySessionOutcome::Disconnected;
-        }
+    let Some(heartbeat_interval_ms) = read_hello(&mut read).await else {
+        error!("Discord Gateway: did not receive HELLO");
+        return DisconnectReason::ConnectionLost;
     };
 
-    debug!(
-        heartbeat_interval_ms,
-        "Discord Gateway: received HELLO"
-    );
+    debug!(heartbeat_interval_ms, "Discord Gateway: received HELLO");
 
     // Send IDENTIFY
     let identify_payload = json!({
@@ -169,7 +149,7 @@ async fn run_gateway_session(
         .await
     {
         error!(error = %e, "Discord Gateway: failed to send IDENTIFY");
-        return GatewaySessionOutcome::Disconnected;
+        return DisconnectReason::ConnectionLost;
     }
 
     // Event loop: heartbeat + dispatch
@@ -177,12 +157,45 @@ async fn run_gateway_session(
     let mut last_sequence: Option<u64> = None;
     let mut heartbeat_ack_pending = false;
 
+    run_event_loop(
+        &mut write,
+        &mut read,
+        &mut heartbeat_timer,
+        &mut last_sequence,
+        &mut heartbeat_ack_pending,
+        config,
+        tx,
+    )
+    .await
+}
+
+/// Run the main event loop for heartbeat and message dispatch
+///
+/// Extracted to reduce function line count. Handles all incoming WebSocket messages
+/// and timer-based heartbeat sending.
+async fn run_event_loop<S>(
+    write: &mut futures_util::stream::SplitSink<
+        tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+        WsMessage,
+    >,
+    read: &mut S,
+    heartbeat_timer: &mut tokio::time::Interval,
+    last_sequence: &mut Option<u64>,
+    heartbeat_ack_pending: &mut bool,
+    config: &mut GatewayConfig,
+    tx: &mpsc::Sender<IncomingMessage>,
+) -> DisconnectReason
+where
+    S: StreamExt<Item = Result<WsMessage, tokio_tungstenite::tungstenite::Error>> + Unpin,
+{
     loop {
         tokio::select! {
             _ = heartbeat_timer.tick() => {
-                if heartbeat_ack_pending {
+                if *heartbeat_ack_pending {
                     warn!("Discord Gateway: missed heartbeat ACK, reconnecting");
-                    return GatewaySessionOutcome::Disconnected;
+                    return DisconnectReason::ConnectionLost;
                 }
 
                 let heartbeat = json!({
@@ -192,106 +205,146 @@ async fn run_gateway_session(
 
                 if let Err(e) = write.send(WsMessage::Text(heartbeat.to_string())).await {
                     error!(error = %e, "Discord Gateway: failed to send heartbeat");
-                    return GatewaySessionOutcome::Disconnected;
+                    return DisconnectReason::ConnectionLost;
                 }
 
-                heartbeat_ack_pending = true;
+                *heartbeat_ack_pending = true;
                 debug!("Discord Gateway: sent heartbeat");
             }
 
             msg = read.next() => {
-                match msg {
-                    Some(Ok(WsMessage::Text(text))) => {
-                        let payload: Value = match serde_json::from_str(&text) {
-                            Ok(v) => v,
-                            Err(e) => {
-                                warn!(error = %e, "Discord Gateway: invalid JSON");
-                                continue;
-                            }
-                        };
-
-                        let op = payload.get("op").and_then(Value::as_u64).unwrap_or(0);
-
-                        // Track sequence number for heartbeats
-                        if let Some(seq) = payload.get("s").and_then(Value::as_u64) {
-                            last_sequence = Some(seq);
-                        }
-
-                        match op {
-                            OPCODE_DISPATCH => {
-                                let event_name = payload.get("t").and_then(Value::as_str).unwrap_or("");
-
-                                match event_name {
-                                    "READY" => {
-                                        // Extract bot user ID from READY
-                                        if let Some(user_id) = payload.pointer("/d/user/id").and_then(Value::as_str) {
-                                            config.bot_user_id = Some(user_id.to_owned());
-                                            info!(bot_user_id = %user_id, "Discord Gateway: READY");
-                                        } else {
-                                            info!("Discord Gateway: READY (no user ID)");
-                                        }
-                                    }
-                                    "MESSAGE_CREATE" => {
-                                        if let Some(data) = payload.get("d") {
-                                            if let Some(msg) = parse_message_create(data, config.bot_user_id.as_deref()) {
-                                                if tx.send(msg).await.is_err() {
-                                                    return GatewaySessionOutcome::SenderClosed;
-                                                }
-                                            }
-                                        }
-                                    }
-                                    _ => {
-                                        debug!(event = event_name, "Discord Gateway: unhandled event");
-                                    }
-                                }
-                            }
-                            OPCODE_HEARTBEAT_ACK => {
-                                heartbeat_ack_pending = false;
-                                debug!("Discord Gateway: heartbeat ACK");
-                            }
-                            OPCODE_HEARTBEAT => {
-                                // Server-requested heartbeat: send one immediately
-                                let heartbeat = json!({
-                                    "op": OPCODE_HEARTBEAT,
-                                    "d": last_sequence
-                                });
-                                if let Err(e) = write.send(WsMessage::Text(heartbeat.to_string())).await {
-                                    error!(error = %e, "Discord Gateway: failed to send requested heartbeat");
-                                    return GatewaySessionOutcome::Disconnected;
-                                }
-                            }
-                            OPCODE_RECONNECT => {
-                                info!("Discord Gateway: server requested reconnect");
-                                return GatewaySessionOutcome::Disconnected;
-                            }
-                            OPCODE_INVALID_SESSION => {
-                                warn!("Discord Gateway: invalid session");
-                                // Wait a bit before reconnecting as Discord recommends
-                                tokio::time::sleep(Duration::from_secs(3)).await;
-                                return GatewaySessionOutcome::Disconnected;
-                            }
-                            _ => {
-                                debug!(op, "Discord Gateway: unhandled opcode");
-                            }
-                        }
-                    }
-                    Some(Ok(WsMessage::Close(frame))) => {
-                        let code = frame.as_ref().map(|f| f.code);
-                        warn!(?code, "Discord Gateway: WebSocket closed");
-                        return GatewaySessionOutcome::Disconnected;
-                    }
-                    Some(Err(e)) => {
-                        error!(error = %e, "Discord Gateway: WebSocket error");
-                        return GatewaySessionOutcome::Disconnected;
-                    }
-                    None => {
-                        warn!("Discord Gateway: WebSocket stream ended");
-                        return GatewaySessionOutcome::Disconnected;
-                    }
-                    _ => {}
+                if let Some(reason) = handle_incoming_message(
+                    msg,
+                    write,
+                    last_sequence,
+                    heartbeat_ack_pending,
+                    config,
+                    tx,
+                )
+                .await
+                {
+                    return reason;
                 }
             }
         }
+    }
+}
+
+/// Handle a single incoming WebSocket message
+///
+/// Returns `None` to continue the event loop, `Some(reason)` to disconnect.
+async fn handle_incoming_message<S>(
+    msg: Option<Result<WsMessage, S>>,
+    write: &mut futures_util::stream::SplitSink<
+        tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+        WsMessage,
+    >,
+    last_sequence: &mut Option<u64>,
+    heartbeat_ack_pending: &mut bool,
+    config: &mut GatewayConfig,
+    tx: &mpsc::Sender<IncomingMessage>,
+) -> Option<DisconnectReason>
+where
+    S: std::error::Error,
+{
+    match msg {
+        Some(Ok(WsMessage::Text(text))) => {
+            let payload: Value = match serde_json::from_str(&text) {
+                Ok(v) => v,
+                Err(e) => {
+                    warn!(error = %e, "Discord Gateway: invalid JSON");
+                    return None;
+                }
+            };
+
+            let op = payload.get("op").and_then(Value::as_u64).unwrap_or(0);
+
+            // Track sequence number for heartbeats
+            if let Some(seq) = payload.get("s").and_then(Value::as_u64) {
+                *last_sequence = Some(seq);
+            }
+
+            match op {
+                OPCODE_DISPATCH => {
+                    let event_name = payload.get("t").and_then(Value::as_str).unwrap_or("");
+
+                    match event_name {
+                        "READY" => {
+                            // Extract bot user ID from READY
+                            if let Some(user_id) =
+                                payload.pointer("/d/user/id").and_then(Value::as_str)
+                            {
+                                config.bot_user_id = Some(user_id.to_owned());
+                                info!(bot_user_id = %user_id, "Discord Gateway: READY");
+                            } else {
+                                info!("Discord Gateway: READY (no user ID)");
+                            }
+                        }
+                        "MESSAGE_CREATE" => {
+                            if let Some(data) = payload.get("d") {
+                                if let Some(msg) =
+                                    parse_message_create(data, config.bot_user_id.as_deref())
+                                {
+                                    if tx.send(msg).await.is_err() {
+                                        info!("Discord Gateway: message receiver dropped");
+                                        return Some(DisconnectReason::ReceiverDropped);
+                                    }
+                                }
+                            }
+                        }
+                        _ => {
+                            debug!(event = event_name, "Discord Gateway: unhandled event");
+                        }
+                    }
+                }
+                OPCODE_HEARTBEAT_ACK => {
+                    *heartbeat_ack_pending = false;
+                    debug!("Discord Gateway: heartbeat ACK");
+                }
+                OPCODE_HEARTBEAT => {
+                    // Server-requested heartbeat: send one immediately
+                    let heartbeat = json!({
+                        "op": OPCODE_HEARTBEAT,
+                        "d": last_sequence
+                    });
+                    if let Err(e) = write.send(WsMessage::Text(heartbeat.to_string())).await {
+                        error!(error = %e, "Discord Gateway: failed to send requested heartbeat");
+                        return Some(DisconnectReason::ConnectionLost);
+                    }
+                }
+                OPCODE_RECONNECT => {
+                    info!("Discord Gateway: server requested reconnect");
+                    return Some(DisconnectReason::ConnectionLost);
+                }
+                OPCODE_INVALID_SESSION => {
+                    warn!("Discord Gateway: invalid session");
+                    // Wait a bit before reconnecting as Discord recommends
+                    tokio::time::sleep(Duration::from_secs(3)).await;
+                    return Some(DisconnectReason::ConnectionLost);
+                }
+                _ => {
+                    debug!(op, "Discord Gateway: unhandled opcode");
+                }
+            }
+
+            None
+        }
+        Some(Ok(WsMessage::Close(frame))) => {
+            let code = frame.as_ref().map(|f| f.code);
+            warn!(?code, "Discord Gateway: WebSocket closed");
+            Some(DisconnectReason::ConnectionLost)
+        }
+        Some(Err(e)) => {
+            error!(error = %e, "Discord Gateway: WebSocket error");
+            Some(DisconnectReason::ConnectionLost)
+        }
+        None => {
+            warn!("Discord Gateway: WebSocket stream ended");
+            Some(DisconnectReason::ConnectionLost)
+        }
+        _ => None,
     }
 }
 
@@ -317,7 +370,7 @@ where
     }
 }
 
-/// Parse a MESSAGE_CREATE dispatch event into an IncomingMessage
+/// Parse a `MESSAGE_CREATE` dispatch event into an `IncomingMessage`
 ///
 /// Skips messages from the bot itself to prevent self-reply loops.
 fn parse_message_create(data: &Value, bot_user_id: Option<&str>) -> Option<IncomingMessage> {
