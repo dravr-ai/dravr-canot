@@ -6,17 +6,17 @@
 
 use async_trait::async_trait;
 use dravr_canot::models::{ChannelConfig, ChannelType};
+use dravr_tronc::mcp::protocol::{CallToolResult, ToolDefinition};
+use dravr_tronc::McpTool;
 use serde_json::{json, Value};
 
-use crate::protocol::{CallToolResult, ToolDefinition};
 use crate::state::SharedState;
-use crate::tools::McpTool;
 
 /// Returns the current configuration for a given channel type
 pub struct GetChannelConfig;
 
 #[async_trait]
-impl McpTool for GetChannelConfig {
+impl McpTool<crate::state::ServerState> for GetChannelConfig {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "get_channel_config".to_owned(),
@@ -82,7 +82,7 @@ impl McpTool for GetChannelConfig {
 pub struct SetChannelConfig;
 
 #[async_trait]
-impl McpTool for SetChannelConfig {
+impl McpTool<crate::state::ServerState> for SetChannelConfig {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "set_channel_config".to_owned(),

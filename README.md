@@ -300,10 +300,10 @@ Your Application
             │   ├── MessagingConfig     → runtime settings from DRAVR_* env vars
             │   └── RetryWorker         → exponential backoff with dead-letter queue
             │
-            ├── MCP Server (library + binary crate)
+            ├── MCP Server (library + binary crate, powered by dravr-tronc)
             │   └── dravr-canot-mcp     → JSON-RPC 2.0 over stdio or HTTP/SSE
             │
-            └── Unified REST API + MCP Server (binary crate)
+            └── Unified REST API + MCP Server (binary crate, powered by dravr-tronc)
                 └── dravr-canot-server  → webhook ingress, message sending, health, MCP
 ```
 

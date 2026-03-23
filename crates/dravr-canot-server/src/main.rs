@@ -12,8 +12,8 @@ use dravr_canot::factory::create_adapter_from_config;
 use dravr_canot::models::ChannelType;
 use dravr_canot::ChannelRegistry;
 use dravr_canot::EnvConfigStore;
-use dravr_canot_mcp::transport::McpTransport;
 use dravr_canot_mcp::ServerState;
+use dravr_tronc::server::cli::ServerArgs;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
 
@@ -23,41 +23,14 @@ use dravr_canot_server::router;
 #[derive(Parser)]
 #[command(name = "dravr-canot-server", version, about)]
 struct Cli {
-    /// Transport mode: "http" for REST API + MCP, "stdio" for MCP-only stdin/stdout
-    #[arg(long, default_value = "http")]
-    transport: String,
-
-    /// HTTP listen port (only used with --transport http)
-    #[arg(long, default_value_t = 3000)]
-    port: u16,
-
-    /// HTTP listen host (only used with --transport http)
-    #[arg(long, default_value = "127.0.0.1")]
-    host: String,
+    #[command(flatten)]
+    server: ServerArgs,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let cli = Cli::parse();
-
-    // stdio transport needs stderr-only logging to keep stdout clean for JSON-RPC
-    let is_stdio = cli.transport == "stdio";
-    if is_stdio {
-        tracing_subscriber::fmt()
-            .with_env_filter(
-                tracing_subscriber::EnvFilter::try_from_default_env()
-                    .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-            )
-            .with_writer(std::io::stderr)
-            .init();
-    } else {
-        tracing_subscriber::fmt()
-            .with_env_filter(
-                tracing_subscriber::EnvFilter::try_from_default_env()
-                    .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-            )
-            .init();
-    }
+    dravr_tronc::server::tracing_init::init(&cli.server.transport);
 
     // Load channel configs from env vars and register adapters
     let env_store = EnvConfigStore::from_env();
@@ -101,23 +74,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
 
     info!(
-        transport = %cli.transport,
+        transport = %cli.server.transport,
         "Starting dravr-canot server"
     );
 
-    match cli.transport.as_str() {
+    match cli.server.transport.as_str() {
         "stdio" => {
-            let server = Arc::new(dravr_canot_mcp::McpServer::new(
-                Arc::clone(&state),
+            let server = Arc::new(dravr_tronc::McpServer::new(
+                "dravr-canot",
+                env!("CARGO_PKG_VERSION"),
                 dravr_canot_mcp::build_tool_registry(),
+                Arc::clone(&state),
             ));
-            dravr_canot_mcp::transport::stdio::StdioTransport
-                .serve(server)
-                .await?;
+            dravr_tronc::mcp::transport::stdio::run(server).await?;
         }
         "http" => {
             let app = router::build(state);
-            let addr = format!("{}:{}", cli.host, cli.port);
+            let addr = format!("{}:{}", cli.server.host, cli.server.port);
             let listener = tokio::net::TcpListener::bind(&addr)
                 .await
                 .map_err(|e| format!("Failed to bind {addr}: {e}"))?;

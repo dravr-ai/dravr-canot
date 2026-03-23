@@ -22,22 +22,19 @@ use crate::webhook;
 /// - `POST /api/messaging/webhook/:channel` — Inbound webhook processing
 /// - `POST /api/messaging/send` — Outbound message delivery
 /// - `GET /health` — Channel readiness check
-/// - `POST /mcp` — MCP Streamable HTTP (JSON-RPC 2.0, via dravr-canot-mcp)
+/// - `POST /mcp` — MCP Streamable HTTP (JSON-RPC 2.0, via dravr-tronc)
 ///
 /// The auth middleware is applied to all routes. It only enforces
 /// authentication when `DRAVR_CHANNELS_API_KEY` is set.
 pub fn build(state: SharedState) -> Router {
-    let mcp_server = Arc::new(dravr_canot_mcp::McpServer::new(
-        Arc::clone(&state),
+    let mcp_server = Arc::new(dravr_tronc::McpServer::new(
+        "dravr-canot",
+        env!("CARGO_PKG_VERSION"),
         dravr_canot_mcp::build_tool_registry(),
+        Arc::clone(&state),
     ));
 
-    let mcp_router = Router::new()
-        .route(
-            "/mcp",
-            post(dravr_canot_mcp::transport::http::handle_mcp_post),
-        )
-        .with_state(mcp_server);
+    let mcp_router = dravr_tronc::mcp::transport::http::mcp_router(mcp_server);
 
     Router::new()
         .route("/api/messaging/webhook/{channel}", post(webhook::handle))

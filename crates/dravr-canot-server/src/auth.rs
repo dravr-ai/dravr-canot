@@ -5,13 +5,8 @@
 // Copyright (c) 2026 dravr.ai
 
 use axum::extract::Request;
-use axum::http::StatusCode;
 use axum::middleware::Next;
-use axum::response::{IntoResponse, Response};
-use axum::Json;
-use subtle::ConstantTimeEq;
-
-use dravr_canot::error::ErrorResponse;
+use axum::response::Response;
 
 /// Environment variable name for the API key
 const API_KEY_ENV: &str = "DRAVR_CHANNELS_API_KEY";
@@ -23,35 +18,7 @@ const API_KEY_ENV: &str = "DRAVR_CHANNELS_API_KEY";
 /// are allowed through (localhost development mode). If set, requests must
 /// include a matching `Authorization: Bearer <key>` header.
 pub async fn require_auth(request: Request, next: Next) -> Response {
-    let expected_key = match std::env::var(API_KEY_ENV) {
-        Ok(key) if !key.is_empty() => key,
-        _ => return next.run(request).await,
-    };
-
-    let auth_header = request
-        .headers()
-        .get("authorization")
-        .and_then(|v| v.to_str().ok());
-
-    match auth_header {
-        Some(header) if header.starts_with("Bearer ") => {
-            let token = &header.as_bytes()["Bearer ".len()..];
-            let expected = expected_key.as_bytes();
-            if token.ct_eq(expected).into() {
-                next.run(request).await
-            } else {
-                auth_error("Invalid API key")
-            }
-        }
-        Some(_) => auth_error("Authorization header must use Bearer scheme"),
-        None => auth_error("Missing Authorization header"),
-    }
-}
-
-/// Build a 401 error response
-fn auth_error(message: &str) -> Response {
-    let body = ErrorResponse::new("authentication_error", message);
-    (StatusCode::UNAUTHORIZED, Json(body)).into_response()
+    dravr_tronc::server::auth::require_auth(API_KEY_ENV, request, next).await
 }
 
 #[cfg(test)]

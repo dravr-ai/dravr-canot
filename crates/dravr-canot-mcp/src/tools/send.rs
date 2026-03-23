@@ -6,17 +6,17 @@
 
 use async_trait::async_trait;
 use dravr_canot::models::{ChannelType, MessageContent, OutgoingMessage};
+use dravr_tronc::mcp::protocol::{CallToolResult, ToolDefinition};
+use dravr_tronc::McpTool;
 use serde_json::{json, Value};
 
-use crate::protocol::{CallToolResult, ToolDefinition};
 use crate::state::SharedState;
-use crate::tools::McpTool;
 
 /// Sends a text message through a registered messaging channel
 pub struct SendMessage;
 
 #[async_trait]
-impl McpTool for SendMessage {
+impl McpTool<crate::state::ServerState> for SendMessage {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "send_message".to_owned(),
