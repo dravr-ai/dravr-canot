@@ -125,6 +125,15 @@ jobs:
             } > CHANGELOG.md
           fi
 
+      - name: Update README version
+        run: |
+          VERSION="${{ steps.bump.outputs.version }}"
+          MAJOR_MINOR="${VERSION%.*}"
+          if [ -f README.md ]; then
+            sed -i "s/dravr-canot = { version = \"[0-9]*\.[0-9]*\"/dravr-canot = { version = \"${MAJOR_MINOR}\"/" README.md
+            sed -i "s/dravr-canot = \"[0-9]*\.[0-9]*\"/dravr-canot = \"${MAJOR_MINOR}\"/" README.md
+          fi
+
       - name: Commit, tag, push
         run: |
           VERSION="${{ steps.bump.outputs.version }}"

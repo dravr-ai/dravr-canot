@@ -58,7 +58,7 @@ docker run -p 3000:3000 \
 
 ```toml
 [dependencies]
-dravr-canot = { version = "0.2", features = ["channel-slack", "channel-whatsapp"] }
+dravr-canot = { version = "0.3", features = ["channel-slack", "channel-whatsapp"] }
 ```
 
 ## Supported Channels
