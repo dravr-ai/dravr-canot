@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.2] — 2026-03-26
+
+### Other
+
+- deps: bump dravr-tronc to 0.2 with error notification support
+
+
+
 ## [0.3.1] — 2026-03-23
 
 
