@@ -95,7 +95,7 @@ mod tests {
             test_config(ChannelType::WhatsApp, "test-key"),
         );
 
-        let retrieved = state.get_config(&ChannelType::WhatsApp).expect("config");
+        let retrieved = state.get_config(&ChannelType::WhatsApp).expect("config"); // Safe: just inserted above
         assert_eq!(retrieved.api_key.as_deref(), Some("test-key"));
     }
 
@@ -106,7 +106,7 @@ mod tests {
         state.set_config(ChannelType::Slack, test_config(ChannelType::Slack, "key-1"));
         state.set_config(ChannelType::Slack, test_config(ChannelType::Slack, "key-2"));
 
-        let retrieved = state.get_config(&ChannelType::Slack).expect("config");
+        let retrieved = state.get_config(&ChannelType::Slack).expect("config"); // Safe: just inserted above
         assert_eq!(retrieved.api_key.as_deref(), Some("key-2"));
     }
 }

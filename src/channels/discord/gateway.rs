@@ -472,15 +472,17 @@ mod tests {
             }
         });
 
-        let msg = parse_message_create(&data, Some("bot-id-123")).unwrap();
+        let msg = parse_message_create(&data, Some("bot-id-123"))
+            .expect("parse_message_create should return a message for valid user input"); // Safe: test data is well-formed
         assert_eq!(msg.sender_id, "user-42");
         assert_eq!(msg.sender_name.as_deref(), Some("Jeanfranc"));
         assert_eq!(msg.conversation_id.as_deref(), Some("ch-1"));
         assert_eq!(msg.channel_message_id, "msg-1");
-        match &msg.content {
-            MessageContent::Text { body } => assert_eq!(body, "Yo Pierre"),
-            _ => panic!("expected text content"),
-        }
+        assert!(
+            matches!(&msg.content, MessageContent::Text { body } if body == "Yo Pierre"),
+            "expected Text content with body 'Yo Pierre', got {:?}",
+            msg.content
+        );
     }
 
     #[test]
