@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.3] — 2026-03-31
+
+### Added
+
+- feat: integrate dravr-build-config submodule (validation violations to fix)
+
+### Fixed
+
+- fix: resolve error handling violations found by dravr-build-config validation
+
+
+
 ## [0.3.2] — 2026-03-26
 
 ### Other
