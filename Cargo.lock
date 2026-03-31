@@ -413,7 +413,7 @@ dependencies = [
 
 [[package]]
 name = "dravr-canot"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "async-trait",
  "chrono",
@@ -438,7 +438,7 @@ dependencies = [
 
 [[package]]
 name = "dravr-canot-mcp"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "async-trait",
  "clap",
@@ -453,7 +453,7 @@ dependencies = [
 
 [[package]]
 name = "dravr-canot-server"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "axum",
  "clap",
@@ -1784,7 +1784,6 @@ dependencies = [
  "cfg-if",
  "libc",
  "psm",
- "windows-sys 0.52.0",
  "windows-sys 0.59.0",
 ]
 
