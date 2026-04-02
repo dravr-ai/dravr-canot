@@ -1,0 +1,49 @@
+# ABOUTME: Claude Code channel binary bridging Slack/Telegram webhooks to Claude Code sessions
+# ABOUTME: MCP server over stdio with webhook ingestion, sender gating, and permission relay
+#
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# Copyright (c) 2026 dravr.ai
+
+[package]
+name = "dravr-canot-claude-channel"
+version = "0.3.3"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Claude Code channel server for dravr-canot — bridge Slack/Telegram to Claude Code sessions via MCP"
+repository = "https://github.com/dravr-ai/dravr-canot"
+keywords = ["mcp", "claude", "channels", "slack", "telegram"]
+categories = ["web-programming::http-server"]
+readme = "../../README.md"
+
+[[bin]]
+name = "dravr-canot-claude-channel"
+path = "src/main.rs"
+
+[features]
+default = ["all-channels"]
+channel-whatsapp = ["dravr-canot/channel-whatsapp"]
+channel-messenger = ["dravr-canot/channel-messenger"]
+channel-discord = ["dravr-canot/channel-discord"]
+channel-slack = ["dravr-canot/channel-slack"]
+channel-telegram = ["dravr-canot/channel-telegram"]
+all-channels = ["channel-whatsapp", "channel-messenger", "channel-discord", "channel-slack", "channel-telegram"]
+
+[dependencies]
+dravr-canot = { path = "../..", version = "0.3.3" }
+axum = "0.8"
+clap = { version = "4", features = ["derive", "env"] }
+http = "1.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.45", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1.22", features = ["v4"] }
+regex = "1"
+
+[dev-dependencies]
+tokio = { version = "1.45", features = ["full", "test-util"] }
+axum-test = "16"
+
+[lints]
+workspace = true

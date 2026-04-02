@@ -2,7 +2,7 @@
 # ABOUTME: Three crates: core library, MCP server library, and unified REST+MCP server binary
 
 [workspace]
-members = [".", "crates/dravr-canot-mcp", "crates/dravr-canot-server"]
+members = [".", "crates/dravr-canot-mcp", "crates/dravr-canot-server", "crates/dravr-canot-claude-channel"]
 
 # ============================================================================
 # Build Profiles
