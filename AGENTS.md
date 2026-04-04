@@ -1,3 +1,15 @@
+# Canot — Multi-Platform Messaging
+
+**Unified messaging library** across WhatsApp, Slack, Discord, Telegram, Messenger. Core capabilities:
+- Single `MessagingProvider` trait abstraction over all platforms
+- Webhook receivers + send clients per platform
+- Platform-specific message formatting (markdown, mentions, attachments)
+- Discord Gateway WebSocket support for real-time
+
+See [README.md](README.md) for platform-specific auth.
+
+---
+
 ## Git Workflow: NO Pull Requests
 
 
