@@ -12,19 +12,6 @@ See [README.md](README.md) for platform-specific auth.
 
 ## Git Workflow: NO Pull Requests
 
-
-## Mandatory Session Setup (ALL AI Agents)
-
-**Run these commands at the START OF EVERY SESSION:**
-
-```bash
-# 1. Initialize shared build config (required for validation)
-git submodule update --init --recursive
-
-# 2. Set git hooks
-git config core.hooksPath .build/hooks
-```
-
 ## Mandatory Pre-Push Validation
 
 **Before EVERY push, run:**
@@ -101,46 +88,13 @@ The backend is a Cargo workspace with 3 crates:
 - Always run validation after making changes: cargo fmt, then clippy on changed crates, then TARGETED tests
 - avoid #[cfg(test)] in the src code. Only in tests
 
-## Required Pre-Commit Validation
+### Tiered Validation (During Development)
 
-### Tiered Validation Approach
-
-#### Tier 1: Quick Iteration (during development)
-Run after each code change to catch errors fast:
-```bash
-# 1. Format code
-cargo fmt
-
-# 2. Compile check only (fast - no linting)
-cargo check --quiet
-
-# 3. Run ONLY tests related to your changes
-cargo test --test <test_file> <test_name_pattern> -- --nocapture
-```
-
-#### Tier 2: Pre-Commit (before committing)
-Run before creating a commit:
-```bash
-# 1. Format code
-cargo fmt
-
-# 2. Clippy — ONLY the crate(s) you actually changed
-# Cargo.toml defines all lint levels - no CLI flags needed
-cargo clippy -p dravr-canot              # core library
-cargo clippy -p dravr-canot-mcp          # MCP server
-cargo clippy -p dravr-canot-server       # REST+MCP server
-# Add --all-targets ONLY if test files in that crate changed
-
-# 3. Run TARGETED tests for changed modules
-cargo test --test <test_file> <test_pattern> -- --nocapture
-```
-
-#### Tier 3: Full Validation (before merge only)
-```bash
-cargo fmt
-cargo clippy --workspace --all-targets
-cargo test --workspace --features all-channels
-```
+| Tier | When | Commands |
+|------|------|----------|
+| Quick | During dev iteration | `cargo check --quiet && cargo test --test <file> <pattern>` |
+| Pre-commit | Before each commit | `cargo fmt --all && cargo clippy -p <changed-crate>` |
+| Full | Before push (see above) | `cargo fmt + clippy + .build/validation/validate.sh` |
 
 ## Error Handling Requirements
 
