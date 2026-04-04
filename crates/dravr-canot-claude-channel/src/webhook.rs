@@ -97,6 +97,15 @@ async fn handle_webhook(
             continue;
         }
 
+        // Validate sender identity fields before propagation
+        if msg.sender_id.is_empty() {
+            debug!(
+                channel = %channel_type,
+                "Dropped message with empty sender_id"
+            );
+            continue;
+        }
+
         let content_text = extract_text_content(&msg.content);
         let chat_id = msg
             .conversation_id
@@ -109,18 +118,27 @@ async fn handle_webhook(
 
         let event = ChannelEvent::Message {
             sender: sender_name,
-            sender_id: msg.sender_id.clone(),
             channel_type: channel_type.to_string(),
             chat_id,
             content: content_text,
         };
 
-        if let Err(e) = state.event_tx.send(event).await {
-            warn!(error = %e, "Failed to forward message to MCP loop");
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Internal forwarding error".to_owned(),
-            );
+        match state.event_tx.try_send(event) {
+            Ok(()) => {}
+            Err(mpsc::error::TrySendError::Full(_)) => {
+                warn!(channel = %channel_type, "Event channel full, dropping message");
+                return (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "Server overloaded".to_owned(),
+                );
+            }
+            Err(mpsc::error::TrySendError::Closed(_)) => {
+                warn!("Event channel closed, MCP loop may have exited");
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal forwarding error".to_owned(),
+                );
+            }
         }
 
         forwarded += 1;

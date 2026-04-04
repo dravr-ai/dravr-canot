@@ -15,7 +15,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::{mpsc, Mutex};
 use tracing::{debug, error, warn};
 
-use crate::permission::PermissionRelay;
+use crate::permission::{PermissionRelay, PermissionRequestParams};
 
 /// Events flowing from the webhook server into the MCP stdio loop
 pub enum ChannelEvent {
@@ -23,8 +23,6 @@ pub enum ChannelEvent {
     Message {
         /// Sender display name
         sender: String,
-        /// Sender platform ID (for tracking last active sender)
-        sender_id: String,
         /// Channel type string (e.g., "slack", "telegram")
         channel_type: String,
         /// Conversation/chat ID for reply routing
@@ -32,6 +30,15 @@ pub enum ChannelEvent {
         /// Message text content
         content: String,
     },
+}
+
+/// Tracks the most recent sender context for routing permission requests.
+/// Kept as a local variable in the MCP run loop rather than in `PermissionRelay`,
+/// so it serves only as the initial routing target when a `permission_request`
+/// arrives from Claude Code.
+struct SenderContext {
+    channel_type: String,
+    chat_id: String,
 }
 
 /// Thread-safe stdout writer for sending JSON-RPC notifications
@@ -57,6 +64,7 @@ pub async fn run(
     let stdin = BufReader::new(tokio::io::stdin());
     let mut lines = stdin.lines();
     let mut event_rx = event_rx;
+    let mut last_sender: Option<SenderContext> = None;
 
     loop {
         tokio::select! {
@@ -72,7 +80,8 @@ pub async fn run(
                             Arc::clone(&registry),
                             Arc::clone(&configs),
                             Arc::clone(&permission_relay),
-                        ).await;
+                            last_sender.as_ref(),
+                        ).await?;
                     }
                     Ok(None) => {
                         debug!("stdin closed, shutting down MCP server");
@@ -85,7 +94,12 @@ pub async fn run(
                 }
             }
             Some(event) = event_rx.recv() => {
-                handle_channel_event(&event, &stdout, &permission_relay).await;
+                handle_channel_event(
+                    &event,
+                    &stdout,
+                    &permission_relay,
+                    &mut last_sender,
+                ).await?;
             }
         }
     }
@@ -100,12 +114,13 @@ async fn handle_stdin_message(
     registry: Arc<ChannelRegistry>,
     configs: Arc<HashMap<ChannelType, ChannelConfig>>,
     permission_relay: Arc<PermissionRelay>,
-) {
+    last_sender: Option<&SenderContext>,
+) -> Result<(), io::Error> {
     let msg: Value = match serde_json::from_str(line) {
         Ok(v) => v,
         Err(e) => {
             warn!(error = %e, "Invalid JSON from stdin");
-            return;
+            return Ok(());
         }
     };
 
@@ -116,13 +131,13 @@ async fn handle_stdin_message(
         "initialize" => {
             if let Some(id) = id {
                 let response = build_initialize_response(id);
-                write_json(stdout, &response).await;
+                write_json(stdout, &response).await?;
             }
         }
         "tools/list" => {
             if let Some(id) = id {
                 let response = build_tools_list_response(id);
-                write_json(stdout, &response).await;
+                write_json(stdout, &response).await?;
             }
         }
         "tools/call" => {
@@ -140,7 +155,7 @@ async fn handle_stdin_message(
 
                 let response =
                     handle_tool_call(id, tool_name, &arguments, &registry, &configs).await;
-                write_json(stdout, &response).await;
+                write_json(stdout, &response).await?;
             }
         }
         "notifications/initialized" => {
@@ -161,9 +176,20 @@ async fn handle_stdin_message(
                     .and_then(Value::as_str)
                     .unwrap_or("");
 
-                permission_relay
-                    .handle_request(request_id, tool_name, description, &registry, &configs)
-                    .await;
+                if let Some(ctx) = last_sender {
+                    let req_params = PermissionRequestParams {
+                        request_id,
+                        tool_name,
+                        description,
+                        sender_channel_type: &ctx.channel_type,
+                        sender_chat_id: &ctx.chat_id,
+                    };
+                    permission_relay
+                        .handle_request(&req_params, &registry, &configs)
+                        .await;
+                } else {
+                    debug!("Permission request received but no active sender to relay to");
+                }
             }
         }
         other => {
@@ -177,11 +203,13 @@ async fn handle_stdin_message(
                         "message": format!("Method not found: {other}")
                     }
                 });
-                write_json(stdout, &response).await;
+                write_json(stdout, &response).await?;
             }
             // Unknown notifications are silently ignored per JSON-RPC spec
         }
     }
+
+    Ok(())
 }
 
 /// Handle a channel event by sending a notification to stdout
@@ -189,17 +217,20 @@ async fn handle_channel_event(
     event: &ChannelEvent,
     stdout: &StdoutWriter,
     permission_relay: &PermissionRelay,
-) {
+    last_sender: &mut Option<SenderContext>,
+) -> Result<(), io::Error> {
     match event {
         ChannelEvent::Message {
             sender,
-            sender_id,
             channel_type,
             chat_id,
             content,
         } => {
-            // Check if this is a permission verdict reply
-            if let Some(verdict) = permission_relay.try_parse_verdict(content) {
+            // Check if this is a permission verdict reply (validated against pending requests)
+            if let Some(verdict) = permission_relay
+                .try_consume_verdict(content, channel_type, chat_id)
+                .await
+            {
                 let notification = json!({
                     "jsonrpc": "2.0",
                     "method": "notifications/claude/channel/permission",
@@ -208,20 +239,29 @@ async fn handle_channel_event(
                         "behavior": verdict.behavior
                     }
                 });
-                write_json(stdout, &notification).await;
-                return;
+                write_json(stdout, &notification).await?;
+                // Update last sender even for verdict messages to fix the race condition
+                // where a verdict reply would skip sender tracking
+                *last_sender = Some(SenderContext {
+                    channel_type: channel_type.clone(),
+                    chat_id: chat_id.clone(),
+                });
+                return Ok(());
             }
 
-            // Track this sender as the last active for permission relay
-            permission_relay
-                .set_last_active_sender(channel_type, chat_id, sender_id)
-                .await;
+            // Track this sender as the last active for permission relay routing
+            *last_sender = Some(SenderContext {
+                channel_type: channel_type.clone(),
+                chat_id: chat_id.clone(),
+            });
 
             // Forward as channel notification
             let notification = build_channel_notification(sender, channel_type, chat_id, content);
-            write_json(stdout, &notification).await;
+            write_json(stdout, &notification).await?;
         }
     }
+
+    Ok(())
 }
 
 /// Build the MCP initialize response with Claude Channel capabilities
@@ -409,16 +449,13 @@ fn build_channel_notification(
     })
 }
 
-/// Write a JSON value to stdout as a single line
-async fn write_json(stdout: &StdoutWriter, value: &Value) {
+/// Write a JSON value to stdout as a single line.
+/// Returns an error if stdout is closed — callers should treat this as fatal.
+async fn write_json(stdout: &StdoutWriter, value: &Value) -> Result<(), io::Error> {
     let mut out = stdout.lock().await;
     let serialized = serde_json::to_string(value).unwrap_or_default();
-    if let Err(e) = writeln!(out, "{serialized}") {
-        error!(error = %e, "Failed to write to stdout");
-    }
-    if let Err(e) = out.flush() {
-        error!(error = %e, "Failed to flush stdout");
-    }
+    writeln!(out, "{serialized}")?;
+    out.flush()
 }
 
 #[cfg(test)]
