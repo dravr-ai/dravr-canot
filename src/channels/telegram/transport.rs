@@ -88,6 +88,13 @@ impl TransportAdapter for TelegramTransport {
             return Ok(vec![]);
         };
 
+        // Skip Telegram service messages (member added/removed, group created, etc.)
+        // These are not user-authored content and should not be dispatched to the LLM.
+        if is_service_message(message) {
+            debug!("Skipping Telegram service message");
+            return Ok(vec![]);
+        }
+
         let chat_id = message
             .pointer("/chat/id")
             .and_then(Value::as_i64)
@@ -250,6 +257,39 @@ fn parse_callback_query(callback: &Value, update: &Value) -> Vec<IncomingMessage
     };
 
     vec![incoming]
+}
+
+/// Telegram service messages that are not user-authored content
+///
+/// These updates carry metadata about group changes (member joins/leaves,
+/// title/photo changes, migrations) and should be silently ignored rather
+/// than dispatched to the LLM pipeline.
+const SERVICE_MESSAGE_FIELDS: &[&str] = &[
+    "new_chat_members",
+    "left_chat_member",
+    "new_chat_title",
+    "new_chat_photo",
+    "delete_chat_photo",
+    "group_chat_created",
+    "supergroup_chat_created",
+    "channel_chat_created",
+    "pinned_message",
+    "migrate_to_chat_id",
+    "migrate_from_chat_id",
+    "message_auto_delete_timer_changed",
+    "forum_topic_created",
+    "forum_topic_closed",
+    "forum_topic_reopened",
+    "video_chat_started",
+    "video_chat_ended",
+    "video_chat_participants_invited",
+];
+
+/// Check if a Telegram message is a service notification rather than user content
+fn is_service_message(message: &Value) -> bool {
+    SERVICE_MESSAGE_FIELDS
+        .iter()
+        .any(|field| message.get(field).is_some())
 }
 
 /// Parse non-text message content (location, photo, or unsupported)
