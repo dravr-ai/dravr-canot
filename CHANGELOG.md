@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.4] — 2026-04-07
+
+### Fixed
+
+- fix(telegram): skip service messages (member added/removed) in group chats
+
+
+
 ## [0.3.3] — 2026-03-31
 
 ### Added
