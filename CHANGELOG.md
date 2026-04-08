@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1] — 2026-04-08
+
+### Fixed
+
+- fix(discord): reset reconnect counter after successful gateway session — previously the counter never reset, causing the gateway to permanently die after accumulating disconnections over time
+- fix(discord): exit immediately on ReceiverDropped instead of retrying
+
 ## [0.4.0] — 2026-04-08
 
 

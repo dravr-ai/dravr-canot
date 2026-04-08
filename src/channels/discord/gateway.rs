@@ -72,28 +72,52 @@ impl GatewayConfig {
 /// Automatically reconnects on disconnection with exponential backoff.
 /// Returns when the sender is dropped or after exhausting reconnect attempts.
 pub async fn start_gateway(config: GatewayConfig, tx: mpsc::Sender<IncomingMessage>) {
-    let mut reconnect_attempts: u32 = 0;
+    let mut consecutive_failures: u32 = 0;
     let mut session_config = config;
 
     loop {
         let outcome = run_gateway_session(&mut session_config, &tx).await;
-        reconnect_attempts += 1;
-        if reconnect_attempts > MAX_RECONNECT_ATTEMPTS {
+
+        // Receiver dropped means no one is listening — exit immediately
+        if matches!(outcome.reason, DisconnectReason::ReceiverDropped) {
+            info!("Discord Gateway: receiver dropped, stopping");
+            return;
+        }
+
+        // Reset failure counter when session was established (reached READY)
+        if outcome.reached_ready {
+            consecutive_failures = 0;
+        } else {
+            consecutive_failures += 1;
+        }
+
+        if consecutive_failures > MAX_RECONNECT_ATTEMPTS {
             error!(
-                attempts = reconnect_attempts,
+                attempts = consecutive_failures,
                 "Discord Gateway: max reconnect attempts exhausted, stopping"
             );
             return;
         }
-        let delay = calculate_backoff_delay(reconnect_attempts);
+
+        let delay = calculate_backoff_delay(consecutive_failures);
         warn!(
-            attempt = reconnect_attempts,
+            attempt = consecutive_failures,
             delay_secs = delay.as_secs(),
-            reason = ?outcome,
+            reason = ?outcome.reason,
+            reached_ready = outcome.reached_ready,
             "Discord Gateway: disconnected, reconnecting"
         );
         tokio::time::sleep(delay).await;
     }
+}
+
+/// Outcome of a single Gateway session
+#[derive(Debug)]
+struct SessionOutcome {
+    /// Why the session ended
+    reason: DisconnectReason,
+    /// Whether the session reached READY state (authenticated and processing messages)
+    reached_ready: bool,
 }
 
 /// Reason for Gateway session disconnection
@@ -109,12 +133,17 @@ enum DisconnectReason {
 async fn run_gateway_session(
     config: &mut GatewayConfig,
     tx: &mpsc::Sender<IncomingMessage>,
-) -> DisconnectReason {
+) -> SessionOutcome {
+    let not_ready = |reason| SessionOutcome {
+        reason,
+        reached_ready: false,
+    };
+
     let (ws_stream, _) = match connect_async(GATEWAY_URL).await {
         Ok(conn) => conn,
         Err(e) => {
             error!(error = %e, "Discord Gateway: WebSocket connection failed");
-            return DisconnectReason::ConnectionLost;
+            return not_ready(DisconnectReason::ConnectionLost);
         }
     };
 
@@ -125,7 +154,7 @@ async fn run_gateway_session(
     // Wait for HELLO to get heartbeat interval
     let Some(heartbeat_interval_ms) = read_hello(&mut read).await else {
         error!("Discord Gateway: did not receive HELLO");
-        return DisconnectReason::ConnectionLost;
+        return not_ready(DisconnectReason::ConnectionLost);
     };
 
     debug!(heartbeat_interval_ms, "Discord Gateway: received HELLO");
@@ -149,7 +178,7 @@ async fn run_gateway_session(
         .await
     {
         error!(error = %e, "Discord Gateway: failed to send IDENTIFY");
-        return DisconnectReason::ConnectionLost;
+        return not_ready(DisconnectReason::ConnectionLost);
     }
 
     // Event loop: heartbeat + dispatch
@@ -157,7 +186,7 @@ async fn run_gateway_session(
     let mut last_sequence: Option<u64> = None;
     let mut heartbeat_ack_pending = false;
 
-    run_event_loop(
+    let reason = run_event_loop(
         &mut write,
         &mut read,
         &mut heartbeat_timer,
@@ -166,7 +195,13 @@ async fn run_gateway_session(
         config,
         tx,
     )
-    .await
+    .await;
+
+    // Session reached READY if bot_user_id was populated during this session
+    SessionOutcome {
+        reason,
+        reached_ready: config.bot_user_id.is_some(),
+    }
 }
 
 /// Run the main event loop for heartbeat and message dispatch
