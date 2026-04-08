@@ -6,7 +6,7 @@
 
 [package]
 name = "dravr-canot-server"
-version = "0.4.1"
+version = "0.4.2"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Unified REST API + MCP server for multi-platform messaging"
@@ -33,8 +33,8 @@ channel-telegram = ["dravr-canot/channel-telegram", "dravr-canot-mcp/channel-tel
 all-channels = ["channel-whatsapp", "channel-messenger", "channel-discord", "channel-slack", "channel-telegram"]
 
 [dependencies]
-dravr-canot = { path = "../..", version = "0.4.1" }
-dravr-canot-mcp = { path = "../dravr-canot-mcp", version = "0.4.1", default-features = false }
+dravr-canot = { path = "../..", version = "0.4.2" }
+dravr-canot-mcp = { path = "../dravr-canot-mcp", version = "0.4.2", default-features = false }
 dravr-tronc = { version = "0.2", features = ["notifications"] }
 axum = "0.8"
 clap = { version = "4", features = ["derive"] }
