@@ -37,6 +37,6 @@ pub use formatter::format_response;
 pub use matcher::CommandMatcher;
 pub use registry::CommandRegistry;
 pub use types::{
-    CommandContext, CommandDefinition, CommandResponse, CommandRole, ParsedCommand,
+    CommandAction, CommandContext, CommandDefinition, CommandResponse, CommandRole, ParsedCommand,
     PendingConfirmation,
 };

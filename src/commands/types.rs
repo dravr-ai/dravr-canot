@@ -92,6 +92,17 @@ pub struct CommandContext {
     pub raw_text: String,
 }
 
+/// An action button for card-style command responses
+#[derive(Debug, Clone)]
+pub struct CommandAction {
+    /// Button label displayed to the user
+    pub label: String,
+    /// Action type: "postback" for callbacks, "url" for links
+    pub action_type: String,
+    /// Callback data or URL
+    pub value: String,
+}
+
 /// Response from a command handler
 #[derive(Debug, Clone)]
 pub struct CommandResponse {
@@ -99,6 +110,10 @@ pub struct CommandResponse {
     pub text: String,
     /// Whether this command requires a confirmation before executing
     pub require_confirmation: bool,
+    /// Optional card title (when set, response renders as a card with buttons)
+    pub card_title: Option<String>,
+    /// Optional action buttons for card responses
+    pub actions: Vec<CommandAction>,
 }
 
 impl CommandResponse {
@@ -108,6 +123,8 @@ impl CommandResponse {
         Self {
             text: text.into(),
             require_confirmation: false,
+            card_title: None,
+            actions: Vec::new(),
         }
     }
 
@@ -117,7 +134,30 @@ impl CommandResponse {
         Self {
             text: text.into(),
             require_confirmation: true,
+            card_title: None,
+            actions: Vec::new(),
         }
+    }
+
+    /// Create a card response with a title, body text, and action buttons
+    #[must_use]
+    pub fn card(
+        title: impl Into<String>,
+        body: impl Into<String>,
+        actions: Vec<CommandAction>,
+    ) -> Self {
+        Self {
+            text: body.into(),
+            require_confirmation: false,
+            card_title: Some(title.into()),
+            actions,
+        }
+    }
+
+    /// Whether this response should be rendered as a card with actions
+    #[must_use]
+    pub fn is_card(&self) -> bool {
+        self.card_title.is_some() && !self.actions.is_empty()
     }
 }
 
