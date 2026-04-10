@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright (c) 2026 dravr.ai
 
+use std::error::Error;
 use std::sync::Arc;
 
 use clap::Parser;
@@ -13,7 +14,11 @@ use dravr_canot::models::ChannelType;
 use dravr_canot::ChannelRegistry;
 use dravr_canot::EnvConfigStore;
 use dravr_canot_mcp::ServerState;
+use dravr_tronc::mcp::transport::stdio;
 use dravr_tronc::server::cli::ServerArgs;
+use dravr_tronc::server::tracing_init;
+use dravr_tronc::McpServer;
+use tokio::net::TcpListener;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
 
@@ -28,9 +33,9 @@ struct Cli {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let cli = Cli::parse();
-    dravr_tronc::server::tracing_init::init_with_notifications(&cli.server.transport);
+    tracing_init::init_with_notifications(&cli.server.transport);
 
     // Load channel configs from env vars and register adapters
     let env_store = EnvConfigStore::from_env();
@@ -80,18 +85,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     match cli.server.transport.as_str() {
         "stdio" => {
-            let server = Arc::new(dravr_tronc::McpServer::new(
+            let server = Arc::new(McpServer::new(
                 "dravr-canot",
                 env!("CARGO_PKG_VERSION"),
                 dravr_canot_mcp::build_tool_registry(),
                 Arc::clone(&state),
             ));
-            dravr_tronc::mcp::transport::stdio::run(server).await?;
+            stdio::run(server).await?;
         }
         "http" => {
             let app = router::build(state);
             let addr = format!("{}:{}", cli.server.host, cli.server.port);
-            let listener = tokio::net::TcpListener::bind(&addr)
+            let listener = TcpListener::bind(&addr)
                 .await
                 .map_err(|e| format!("Failed to bind {addr}: {e}"))?;
 

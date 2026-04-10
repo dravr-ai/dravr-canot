@@ -10,13 +10,13 @@ use dravr_tronc::mcp::protocol::{CallToolResult, ToolDefinition};
 use dravr_tronc::McpTool;
 use serde_json::{json, Value};
 
-use crate::state::SharedState;
+use crate::state::{ServerState, SharedState};
 
 /// Sends a text message through a registered messaging channel
 pub struct SendMessage;
 
 #[async_trait]
-impl McpTool<crate::state::ServerState> for SendMessage {
+impl McpTool<ServerState> for SendMessage {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "send_message".to_owned(),

@@ -10,13 +10,13 @@ use dravr_tronc::mcp::protocol::{CallToolResult, ToolDefinition};
 use dravr_tronc::McpTool;
 use serde_json::{json, Value};
 
-use crate::state::SharedState;
+use crate::state::{ServerState, SharedState};
 
 /// Returns the current configuration for a given channel type
 pub struct GetChannelConfig;
 
 #[async_trait]
-impl McpTool<crate::state::ServerState> for GetChannelConfig {
+impl McpTool<ServerState> for GetChannelConfig {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "get_channel_config".to_owned(),
@@ -82,7 +82,7 @@ impl McpTool<crate::state::ServerState> for GetChannelConfig {
 pub struct SetChannelConfig;
 
 #[async_trait]
-impl McpTool<crate::state::ServerState> for SetChannelConfig {
+impl McpTool<ServerState> for SetChannelConfig {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "set_channel_config".to_owned(),

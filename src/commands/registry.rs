@@ -4,7 +4,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright (c) 2026 dravr.ai
 
-use std::collections::HashMap;
+use std::cmp::Reverse;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use super::types::CommandDefinition;
@@ -87,7 +88,7 @@ impl CommandRegistry {
             .definitions
             .values()
             .map(|d| d.domain.clone())
-            .collect::<std::collections::HashSet<_>>()
+            .collect::<HashSet<_>>()
             .into_iter()
             .collect();
         domains.sort();
@@ -118,7 +119,7 @@ impl CommandRegistry {
     #[must_use]
     pub fn sorted_commands(&self) -> Vec<String> {
         let mut cmds: Vec<String> = self.lookup.keys().cloned().collect();
-        cmds.sort_by_key(|b| std::cmp::Reverse(b.len()));
+        cmds.sort_by_key(|b| Reverse(b.len()));
         cmds
     }
 

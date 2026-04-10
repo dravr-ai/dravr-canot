@@ -1,15 +1,21 @@
 // ABOUTME: Minimal Discord Gateway test — connects, prints all received messages
 // ABOUTME: Usage: DISCORD_BOT_TOKEN=xxx cargo run --example discord_gateway --features channel-discord
+//
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright (c) 2026 dravr.ai
+
+use std::env;
 
 use dravr_canot::channels::discord::gateway::{start_gateway, GatewayConfig};
 use tokio::sync::mpsc;
+use tracing_subscriber::fmt;
 
 #[tokio::main]
 async fn main() {
-    std::env::set_var("RUST_LOG", "debug");
-    tracing_subscriber::fmt::init();
+    env::set_var("RUST_LOG", "debug");
+    fmt::init();
 
-    let token = std::env::var("DISCORD_BOT_TOKEN").expect("DISCORD_BOT_TOKEN must be set");
+    let token = env::var("DISCORD_BOT_TOKEN").expect("DISCORD_BOT_TOKEN must be set");
 
     println!("Starting Discord Gateway...");
 

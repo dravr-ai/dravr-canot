@@ -4,15 +4,19 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright (c) 2026 dravr.ai
 
+use std::error::Error as StdError;
 use std::time::Duration;
 
 use chrono::Utc;
+use futures_util::stream::SplitSink;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
+use tokio::net::TcpStream;
 use tokio::sync::mpsc;
-use tokio::time::{interval, timeout};
-use tokio_tungstenite::connect_async;
+use tokio::time::{interval, sleep, timeout, Interval};
+use tokio_tungstenite::tungstenite::Error as TungsteniteError;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
+use tokio_tungstenite::{connect_async, MaybeTlsStream};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
@@ -107,7 +111,7 @@ pub async fn start_gateway(config: GatewayConfig, tx: mpsc::Sender<IncomingMessa
             reached_ready = outcome.reached_ready,
             "Discord Gateway: disconnected, reconnecting"
         );
-        tokio::time::sleep(delay).await;
+        sleep(delay).await;
     }
 }
 
@@ -209,21 +213,16 @@ async fn run_gateway_session(
 /// Extracted to reduce function line count. Handles all incoming WebSocket messages
 /// and timer-based heartbeat sending.
 async fn run_event_loop<S>(
-    write: &mut futures_util::stream::SplitSink<
-        tokio_tungstenite::WebSocketStream<
-            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-        >,
-        WsMessage,
-    >,
+    write: &mut SplitSink<tokio_tungstenite::WebSocketStream<MaybeTlsStream<TcpStream>>, WsMessage>,
     read: &mut S,
-    heartbeat_timer: &mut tokio::time::Interval,
+    heartbeat_timer: &mut Interval,
     last_sequence: &mut Option<u64>,
     heartbeat_ack_pending: &mut bool,
     config: &mut GatewayConfig,
     tx: &mpsc::Sender<IncomingMessage>,
 ) -> DisconnectReason
 where
-    S: StreamExt<Item = Result<WsMessage, tokio_tungstenite::tungstenite::Error>> + Unpin,
+    S: StreamExt<Item = Result<WsMessage, TungsteniteError>> + Unpin,
 {
     loop {
         tokio::select! {
@@ -270,19 +269,14 @@ where
 /// Returns `None` to continue the event loop, `Some(reason)` to disconnect.
 async fn handle_incoming_message<S>(
     msg: Option<Result<WsMessage, S>>,
-    write: &mut futures_util::stream::SplitSink<
-        tokio_tungstenite::WebSocketStream<
-            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-        >,
-        WsMessage,
-    >,
+    write: &mut SplitSink<tokio_tungstenite::WebSocketStream<MaybeTlsStream<TcpStream>>, WsMessage>,
     last_sequence: &mut Option<u64>,
     heartbeat_ack_pending: &mut bool,
     config: &mut GatewayConfig,
     tx: &mpsc::Sender<IncomingMessage>,
 ) -> Option<DisconnectReason>
 where
-    S: std::error::Error,
+    S: StdError,
 {
     match msg {
         Some(Ok(WsMessage::Text(text))) => {
@@ -356,7 +350,7 @@ where
                 OPCODE_INVALID_SESSION => {
                     warn!("Discord Gateway: invalid session");
                     // Wait a bit before reconnecting as Discord recommends
-                    tokio::time::sleep(Duration::from_secs(3)).await;
+                    sleep(Duration::from_secs(3)).await;
                     return Some(DisconnectReason::ConnectionLost);
                 }
                 _ => {
@@ -386,7 +380,7 @@ where
 /// Read the HELLO message and extract heartbeat interval
 async fn read_hello<S>(read: &mut S) -> Option<u64>
 where
-    S: StreamExt<Item = Result<WsMessage, tokio_tungstenite::tungstenite::Error>> + Unpin,
+    S: StreamExt<Item = Result<WsMessage, TungsteniteError>> + Unpin,
 {
     let hello_timeout = Duration::from_secs(10);
 

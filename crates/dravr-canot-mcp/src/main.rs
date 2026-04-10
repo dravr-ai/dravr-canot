@@ -4,13 +4,16 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright (c) 2026 dravr.ai
 
+use std::error::Error;
 use std::sync::Arc;
 
 use clap::Parser;
 use dravr_canot::ChannelRegistry;
 use dravr_canot_mcp::ServerState;
 use dravr_tronc::mcp::server::McpServer;
+use dravr_tronc::mcp::transport::{http, stdio};
 use dravr_tronc::server::cli::McpArgs;
+use dravr_tronc::server::tracing_init;
 use tokio::sync::RwLock;
 
 /// dravr-canot-mcp — MCP server exposing messaging channels via Model Context Protocol
@@ -22,9 +25,9 @@ struct Cli {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let cli = Cli::parse();
-    dravr_tronc::server::tracing_init::init(&cli.server.transport);
+    tracing_init::init(&cli.server.transport);
 
     let registry = ChannelRegistry::new();
     let state = Arc::new(RwLock::new(ServerState::new(registry)));
@@ -42,10 +45,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     );
 
     match cli.server.transport.as_str() {
-        "stdio" => dravr_tronc::mcp::transport::stdio::run(server).await?,
+        "stdio" => stdio::run(server).await?,
         "http" => {
-            dravr_tronc::mcp::transport::http::serve(server, &cli.server.host, cli.server.port)
-                .await?;
+            http::serve(server, &cli.server.host, cli.server.port).await?;
         }
         other => {
             return Err(format!("Unknown transport: {other}. Valid: stdio, http").into());

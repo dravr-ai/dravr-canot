@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright (c) 2026 dravr.ai
 
+use std::collections::HashMap;
 use std::fmt;
 
 /// Required role to execute a command
@@ -171,5 +172,5 @@ pub struct PendingConfirmation {
     /// When the confirmation expires (ISO 8601)
     pub expires_at: String,
     /// Additional context needed to execute after confirmation
-    pub context: std::collections::HashMap<String, String>,
+    pub context: HashMap<String, String>,
 }

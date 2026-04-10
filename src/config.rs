@@ -5,6 +5,7 @@
 // Copyright (c) 2026 dravr.ai
 
 use std::env;
+use std::str::FromStr;
 
 use crate::models;
 
@@ -81,7 +82,7 @@ impl Default for MessagingConfig {
 }
 
 /// Parse an environment variable as a numeric type, returning `default` if absent or unparseable
-fn parse_env_or<T: std::str::FromStr>(key: &str, default: T) -> T {
+fn parse_env_or<T: FromStr>(key: &str, default: T) -> T {
     env::var(key)
         .ok()
         .and_then(|v| v.trim().parse().ok())
