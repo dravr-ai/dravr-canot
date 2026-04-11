@@ -43,7 +43,8 @@ regex = "1"
 
 [dev-dependencies]
 tokio = { version = "1.45", features = ["full", "test-util"] }
-axum-test = "16"
+async-trait = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
 
 [lints]
 workspace = true

@@ -460,7 +460,16 @@ async fn write_json(stdout: &StdoutWriter, value: &Value) -> Result<(), io::Erro
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
+    use crate::test_support::{sample_config, MockAdapter};
+
+    fn registry_with(adapter: Arc<MockAdapter>) -> ChannelRegistry {
+        let mut r = ChannelRegistry::new();
+        r.register(adapter);
+        r
+    }
 
     #[test]
     fn initialize_response_has_channel_capabilities() {
@@ -499,5 +508,107 @@ mod tests {
         assert_eq!(notif["params"]["meta"]["chat_id"], "C123");
         // Must not have an id field (notifications are fire-and-forget)
         assert!(notif.get("id").is_none());
+    }
+
+    #[tokio::test]
+    async fn handle_tool_call_reply_sends_via_adapter() {
+        let adapter = Arc::new(MockAdapter::new(ChannelType::Slack));
+        let registry = registry_with(Arc::clone(&adapter));
+        let mut configs = HashMap::new();
+        configs.insert(ChannelType::Slack, sample_config(ChannelType::Slack));
+
+        let args = json!({ "channel_type": "slack", "chat_id": "C123", "text": "hi there" });
+        let resp = handle_tool_call(&json!(1), "reply", &args, &registry, &configs).await;
+
+        assert_eq!(resp["id"], 1);
+        let text = resp["result"]["content"][0]["text"]
+            .as_str()
+            .expect("text content"); // Safe: test assertion
+        assert!(text.starts_with("Sent"), "unexpected result: {text}");
+        assert!(resp["result"].get("isError").is_none());
+
+        let sent = adapter.sent.lock().await;
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0].recipient_id, "C123");
+        match &sent[0].content {
+            MessageContent::Text { body } => assert_eq!(body, "hi there"),
+            other => panic!("unexpected content: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn handle_tool_call_unknown_tool_returns_error() {
+        let adapter = Arc::new(MockAdapter::new(ChannelType::Slack));
+        let registry = registry_with(adapter);
+        let configs = HashMap::new();
+
+        let resp = handle_tool_call(&json!(1), "bogus", &json!({}), &registry, &configs).await;
+        assert_eq!(resp["result"]["isError"], true);
+        let text = resp["result"]["content"][0]["text"].as_str().expect("text"); // Safe: test assertion
+        assert!(text.contains("Unknown tool"));
+    }
+
+    #[tokio::test]
+    async fn handle_tool_call_missing_args_returns_error() {
+        let adapter = Arc::new(MockAdapter::new(ChannelType::Slack));
+        let registry = registry_with(adapter);
+        let configs = HashMap::new();
+
+        let resp = handle_tool_call(
+            &json!(1),
+            "reply",
+            &json!({ "chat_id": "C1" }),
+            &registry,
+            &configs,
+        )
+        .await;
+        assert_eq!(resp["result"]["isError"], true);
+        let text = resp["result"]["content"][0]["text"].as_str().expect("text"); // Safe: test assertion
+        assert!(text.contains("Missing required arguments"));
+    }
+
+    #[tokio::test]
+    async fn handle_tool_call_invalid_channel_type_returns_error() {
+        let adapter = Arc::new(MockAdapter::new(ChannelType::Slack));
+        let registry = registry_with(adapter);
+        let configs = HashMap::new();
+
+        let args = json!({ "channel_type": "bogus", "chat_id": "C1", "text": "hi" });
+        let resp = handle_tool_call(&json!(1), "reply", &args, &registry, &configs).await;
+        assert_eq!(resp["result"]["isError"], true);
+        let text = resp["result"]["content"][0]["text"].as_str().expect("text"); // Safe: test assertion
+        assert!(text.contains("Invalid channel_type"));
+    }
+
+    #[tokio::test]
+    async fn send_reply_unregistered_channel_returns_error_text() {
+        // Registry has slack, but we request telegram
+        let adapter = Arc::new(MockAdapter::new(ChannelType::Slack));
+        let registry = registry_with(adapter);
+        let configs = HashMap::new();
+
+        let result = send_reply(&ChannelType::Telegram, "C1", "hi", &registry, &configs).await;
+        assert!(result.contains("not registered"));
+    }
+
+    #[tokio::test]
+    async fn send_reply_missing_config_returns_error_text() {
+        let adapter = Arc::new(MockAdapter::new(ChannelType::Slack));
+        let registry = registry_with(adapter);
+        let configs = HashMap::new(); // Registered but not configured
+
+        let result = send_reply(&ChannelType::Slack, "C1", "hi", &registry, &configs).await;
+        assert!(result.contains("No configuration"));
+    }
+
+    #[tokio::test]
+    async fn send_reply_propagates_adapter_failure() {
+        let adapter = Arc::new(MockAdapter::new(ChannelType::Slack).with_send_failing());
+        let registry = registry_with(adapter);
+        let mut configs = HashMap::new();
+        configs.insert(ChannelType::Slack, sample_config(ChannelType::Slack));
+
+        let result = send_reply(&ChannelType::Slack, "C1", "hi", &registry, &configs).await;
+        assert!(result.starts_with("Failed to send"), "got: {result}");
     }
 }

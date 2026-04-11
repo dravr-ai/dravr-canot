@@ -434,4 +434,179 @@ mod tests {
         r.try_consume_verdict("yes abcde", "slack", "C1").await;
         assert_eq!(r.pending_requests.read().await.len(), 0);
     }
+
+    // --- handle_request tests (end-to-end with mock adapter) ---
+
+    use std::sync::Arc;
+
+    use crate::test_support::{sample_config, MockAdapter};
+
+    fn registry_with(adapter: Arc<MockAdapter>) -> ChannelRegistry {
+        let mut r = ChannelRegistry::new();
+        r.register(adapter);
+        r
+    }
+
+    #[tokio::test]
+    async fn handle_request_tracks_pending_and_sends_prompt() {
+        let adapter = Arc::new(MockAdapter::new(ChannelType::Slack));
+        let registry = registry_with(Arc::clone(&adapter));
+        let mut configs = HashMap::new();
+        configs.insert(ChannelType::Slack, sample_config(ChannelType::Slack));
+
+        let relay = relay();
+        let params = PermissionRequestParams {
+            request_id: "abcde",
+            tool_name: "Bash",
+            description: "rm -rf /",
+            sender_channel_type: "slack",
+            sender_chat_id: "C1",
+        };
+        relay.handle_request(&params, &registry, &configs).await;
+
+        // Pending request registered
+        let pending = relay.pending_requests.read().await;
+        let entry = pending.get("abcde").expect("pending"); // Safe: test assertion
+        assert_eq!(entry.channel_type, "slack");
+        assert_eq!(entry.chat_id, "C1");
+        drop(pending);
+
+        // Adapter received outbound prompt containing request ID
+        let sent = adapter.sent.lock().await;
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0].recipient_id, "C1");
+        match &sent[0].content {
+            dravr_canot::models::MessageContent::Text { body } => {
+                assert!(body.contains("Bash"));
+                assert!(body.contains("rm -rf /"));
+                assert!(body.contains("yes abcde"));
+                assert!(body.contains("no abcde"));
+            }
+            other => panic!("unexpected content: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn handle_request_with_empty_id_is_ignored() {
+        let adapter = Arc::new(MockAdapter::new(ChannelType::Slack));
+        let registry = registry_with(Arc::clone(&adapter));
+        let mut configs = HashMap::new();
+        configs.insert(ChannelType::Slack, sample_config(ChannelType::Slack));
+
+        let relay = relay();
+        let params = PermissionRequestParams {
+            request_id: "",
+            tool_name: "Bash",
+            description: "ls",
+            sender_channel_type: "slack",
+            sender_chat_id: "C1",
+        };
+        relay.handle_request(&params, &registry, &configs).await;
+
+        assert!(relay.pending_requests.read().await.is_empty());
+        assert!(adapter.sent.lock().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn handle_request_with_invalid_channel_type_is_ignored() {
+        let adapter = Arc::new(MockAdapter::new(ChannelType::Slack));
+        let registry = registry_with(Arc::clone(&adapter));
+        let configs = HashMap::new();
+
+        let relay = relay();
+        let params = PermissionRequestParams {
+            request_id: "abcde",
+            tool_name: "Bash",
+            description: "ls",
+            sender_channel_type: "bogus",
+            sender_chat_id: "C1",
+        };
+        relay.handle_request(&params, &registry, &configs).await;
+
+        assert!(relay.pending_requests.read().await.is_empty());
+        assert!(adapter.sent.lock().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn handle_request_with_unregistered_channel_does_not_send() {
+        let adapter = Arc::new(MockAdapter::new(ChannelType::Slack));
+        let registry = registry_with(Arc::clone(&adapter));
+        let mut configs = HashMap::new();
+        configs.insert(ChannelType::Telegram, sample_config(ChannelType::Telegram));
+
+        let relay = relay();
+        let params = PermissionRequestParams {
+            request_id: "abcde",
+            tool_name: "Bash",
+            description: "ls",
+            sender_channel_type: "telegram",
+            sender_chat_id: "C1",
+        };
+        relay.handle_request(&params, &registry, &configs).await;
+
+        // Pending is still registered (insertion happens before send attempt) —
+        // but no prompt was sent because telegram is not in the registry.
+        assert_eq!(relay.pending_requests.read().await.len(), 1);
+        assert!(adapter.sent.lock().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn end_to_end_request_then_consume_verdict() {
+        let adapter = Arc::new(MockAdapter::new(ChannelType::Slack));
+        let registry = registry_with(Arc::clone(&adapter));
+        let mut configs = HashMap::new();
+        configs.insert(ChannelType::Slack, sample_config(ChannelType::Slack));
+
+        let relay = relay();
+        let params = PermissionRequestParams {
+            request_id: "abcde",
+            tool_name: "Write",
+            description: "create file",
+            sender_channel_type: "slack",
+            sender_chat_id: "C1",
+        };
+        relay.handle_request(&params, &registry, &configs).await;
+
+        // User approves from the same sender
+        let verdict = relay
+            .try_consume_verdict("yes abcde", "slack", "C1")
+            .await
+            .expect("verdict should be accepted"); // Safe: test assertion
+        assert_eq!(verdict.request_id, "abcde");
+        assert_eq!(verdict.behavior, "allow");
+
+        // Second attempt is rejected — request already consumed
+        let replayed = relay.try_consume_verdict("yes abcde", "slack", "C1").await;
+        assert!(replayed.is_none());
+    }
+
+    #[tokio::test]
+    async fn e2e_cross_chat_verdict_is_rejected_and_preserved() {
+        let adapter = Arc::new(MockAdapter::new(ChannelType::Slack));
+        let registry = registry_with(adapter);
+        let mut configs = HashMap::new();
+        configs.insert(ChannelType::Slack, sample_config(ChannelType::Slack));
+
+        let relay = relay();
+        let params = PermissionRequestParams {
+            request_id: "abcde",
+            tool_name: "Write",
+            description: "create file",
+            sender_channel_type: "slack",
+            sender_chat_id: "C_ORIG",
+        };
+        relay.handle_request(&params, &registry, &configs).await;
+
+        // Rogue user in a different chat tries to approve
+        assert!(relay
+            .try_consume_verdict("yes abcde", "slack", "C_OTHER")
+            .await
+            .is_none());
+        // Original chat can still approve
+        let verdict = relay
+            .try_consume_verdict("yes abcde", "slack", "C_ORIG")
+            .await
+            .expect("original sender still accepted"); // Safe: test assertion
+        assert_eq!(verdict.behavior, "allow");
+    }
 }

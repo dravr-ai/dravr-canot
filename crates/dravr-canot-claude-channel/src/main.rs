@@ -21,6 +21,9 @@ mod permission;
 mod sender_gate;
 mod webhook;
 
+#[cfg(test)]
+mod test_support;
+
 /// Channel event buffer size for the mpsc channel between webhook server and MCP loop
 const EVENT_BUFFER_SIZE: usize = 256;
 
