@@ -192,8 +192,8 @@ mod tests {
 
     async fn call_handler(state: Arc<WebhookState>, channel: &str) -> (StatusCode, String) {
         handle_webhook(
-            axum::extract::State(state),
-            axum::extract::Path(channel.to_owned()),
+            State(state),
+            Path(channel.to_owned()),
             HeaderMap::new(),
             Bytes::from_static(b"{}"),
         )

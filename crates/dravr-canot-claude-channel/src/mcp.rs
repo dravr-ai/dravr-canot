@@ -5,13 +5,14 @@
 // Copyright (c) 2026 dravr.ai
 
 use std::collections::HashMap;
+use std::error::Error as StdError;
 use std::io::{self, Write};
 use std::sync::Arc;
 
 use dravr_canot::models::{ChannelConfig, ChannelType, MessageContent, OutgoingMessage};
 use dravr_canot::ChannelRegistry;
 use serde_json::{json, Value};
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{stdin as tokio_stdin, AsyncBufReadExt, BufReader};
 use tokio::sync::{mpsc, Mutex};
 use tracing::{debug, error, warn};
 
@@ -59,9 +60,9 @@ pub async fn run(
     registry: Arc<ChannelRegistry>,
     configs: Arc<HashMap<ChannelType, ChannelConfig>>,
     permission_relay: Arc<PermissionRelay>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(), Box<dyn StdError + Send + Sync>> {
     let stdout: StdoutWriter = Arc::new(Mutex::new(io::stdout()));
-    let stdin = BufReader::new(tokio::io::stdin());
+    let stdin = BufReader::new(tokio_stdin());
     let mut lines = stdin.lines();
     let mut event_rx = event_rx;
     let mut last_sender: Option<SenderContext> = None;

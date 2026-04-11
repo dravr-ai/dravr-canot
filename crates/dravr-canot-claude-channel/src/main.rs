@@ -5,6 +5,8 @@
 // Copyright (c) 2026 dravr.ai
 
 use std::collections::HashMap;
+use std::error::Error as StdError;
+use std::io;
 use std::sync::Arc;
 
 use clap::Parser;
@@ -13,8 +15,11 @@ use dravr_canot::factory::create_adapter_from_config;
 use dravr_canot::models::ChannelType;
 use dravr_canot::ChannelRegistry;
 use dravr_canot::EnvConfigStore;
+use tokio::net::TcpListener;
 use tokio::sync::mpsc;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
+use tracing_subscriber::fmt as tracing_fmt;
+use tracing_subscriber::EnvFilter;
 
 mod mcp;
 mod permission;
@@ -41,14 +46,13 @@ struct Cli {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
     // Initialize tracing (respects RUST_LOG env var)
-    tracing_subscriber::fmt()
+    tracing_fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
         )
-        .with_writer(std::io::stderr)
+        .with_writer(io::stderr)
         .init();
 
     let cli = Cli::parse();
@@ -106,7 +110,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     });
     let app = webhook::build_router(webhook_state);
     let addr = format!("127.0.0.1:{}", cli.webhook_port);
-    let listener = tokio::net::TcpListener::bind(&addr)
+    let listener = TcpListener::bind(&addr)
         .await
         .map_err(|e| format!("Failed to bind webhook server to {addr}: {e}"))?;
 
@@ -116,13 +120,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     tokio::select! {
         result = mcp::run(event_rx, Arc::clone(&registry), Arc::clone(&configs), Arc::clone(&permission_relay)) => {
             if let Err(e) = result {
-                tracing::error!(error = %e, "MCP server error");
+                error!(error = %e, "MCP server error");
             }
             info!("MCP server exited, shutting down");
         }
         result = axum::serve(listener, app) => {
             if let Err(e) = result {
-                tracing::error!(error = %e, "Webhook server error");
+                error!(error = %e, "Webhook server error");
             }
             info!("Webhook server exited");
         }

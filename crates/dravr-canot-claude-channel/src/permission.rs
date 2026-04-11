@@ -439,6 +439,8 @@ mod tests {
 
     use std::sync::Arc;
 
+    use dravr_canot::models::MessageContent;
+
     use crate::test_support::{sample_config, MockAdapter};
 
     fn registry_with(adapter: Arc<MockAdapter>) -> ChannelRegistry {
@@ -475,7 +477,7 @@ mod tests {
         let sent = adapter.sent.lock().await;
         assert_eq!(sent.len(), 1);
         assert_eq!(sent[0].recipient_id, "C1");
-        let dravr_canot::models::MessageContent::Text { body } = &sent[0].content else {
+        let MessageContent::Text { body } = &sent[0].content else {
             unreachable!("permission prompt should be a text message"); // Safe: test assertion
         };
         assert!(body.contains("Bash"));

@@ -6,7 +6,7 @@
 
 [package]
 name = "dravr-canot-claude-channel"
-version = "0.3.3"
+version = "0.4.3"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Claude Code channel server for dravr-canot — bridge Slack/Telegram to Claude Code sessions via MCP"
@@ -29,7 +29,7 @@ channel-telegram = ["dravr-canot/channel-telegram"]
 all-channels = ["channel-whatsapp", "channel-messenger", "channel-discord", "channel-slack", "channel-telegram"]
 
 [dependencies]
-dravr-canot = { path = "../..", version = "0.3.3" }
+dravr-canot = { path = "../..", version = "0.4.3" }
 axum = "0.8"
 clap = { version = "4", features = ["derive", "env"] }
 http = "1.4"

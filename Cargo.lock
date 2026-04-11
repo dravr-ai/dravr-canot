@@ -401,7 +401,7 @@ dependencies = [
 
 [[package]]
 name = "dravr-canot-claude-channel"
-version = "0.3.3"
+version = "0.4.3"
 dependencies = [
  "async-trait",
  "axum",
