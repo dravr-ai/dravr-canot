@@ -475,15 +475,13 @@ mod tests {
         let sent = adapter.sent.lock().await;
         assert_eq!(sent.len(), 1);
         assert_eq!(sent[0].recipient_id, "C1");
-        match &sent[0].content {
-            dravr_canot::models::MessageContent::Text { body } => {
-                assert!(body.contains("Bash"));
-                assert!(body.contains("rm -rf /"));
-                assert!(body.contains("yes abcde"));
-                assert!(body.contains("no abcde"));
-            }
-            other => panic!("unexpected content: {other:?}"),
-        }
+        let dravr_canot::models::MessageContent::Text { body } = &sent[0].content else {
+            unreachable!("permission prompt should be a text message"); // Safe: test assertion
+        };
+        assert!(body.contains("Bash"));
+        assert!(body.contains("rm -rf /"));
+        assert!(body.contains("yes abcde"));
+        assert!(body.contains("no abcde"));
     }
 
     #[tokio::test]

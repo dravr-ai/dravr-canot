@@ -530,10 +530,10 @@ mod tests {
         let sent = adapter.sent.lock().await;
         assert_eq!(sent.len(), 1);
         assert_eq!(sent[0].recipient_id, "C123");
-        match &sent[0].content {
-            MessageContent::Text { body } => assert_eq!(body, "hi there"),
-            other => panic!("unexpected content: {other:?}"),
-        }
+        let MessageContent::Text { body } = &sent[0].content else {
+            unreachable!("reply tool should produce a text message"); // Safe: test assertion
+        };
+        assert_eq!(body, "hi there");
     }
 
     #[tokio::test]

@@ -246,7 +246,7 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body, "ok");
 
-        let event = rx.try_recv().expect("should have forwarded event");
+        let event = rx.try_recv().expect("should have forwarded event"); // Safe: test assertion
         match event {
             ChannelEvent::Message {
                 sender,
@@ -273,7 +273,7 @@ mod tests {
         let (status, _) = call_handler(state, "slack").await;
         assert_eq!(status, StatusCode::OK);
 
-        let event = rx.try_recv().expect("allowed message forwarded");
+        let event = rx.try_recv().expect("allowed message forwarded"); // Safe: test assertion
         let ChannelEvent::Message { sender, .. } = event;
         assert_eq!(sender, "U_ALLOWED-name");
         // Only one message should have made it through
@@ -301,7 +301,7 @@ mod tests {
         let (status, _) = call_handler(state, "slack").await;
         assert_eq!(status, StatusCode::OK);
 
-        let ChannelEvent::Message { chat_id, .. } = rx.try_recv().expect("event forwarded");
+        let ChannelEvent::Message { chat_id, .. } = rx.try_recv().expect("event forwarded"); // Safe: test assertion
         assert_eq!(chat_id, "U1");
     }
 
