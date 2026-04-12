@@ -96,6 +96,7 @@ async fn main() -> Result<(), dravr_canot::error::MessagingError> {
         content: MessageContent::Text { body: "Hello from Canot!".into() },
         correlation_id: Uuid::new_v4(),
         reply_to: None,
+        thread_id: None,
     };
 
     // Render to Slack Block Kit JSON

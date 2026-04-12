@@ -416,6 +416,7 @@ pub async fn send_reply(
         },
         correlation_id: uuid::Uuid::new_v4(),
         reply_to: None,
+        thread_id: None,
     };
 
     match adapter.send(&msg, config).await {

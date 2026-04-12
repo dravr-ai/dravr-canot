@@ -1,5 +1,8 @@
 // ABOUTME: Integration tests for dravr-canot core library
 // ABOUTME: Tests registry, factory, models, config, and channel trait interactions
+//
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright (c) 2026 dravr.ai
 
 use dravr_canot::config::MessagingConfig;
 use dravr_canot::error::MessagingError;
@@ -426,6 +429,7 @@ fn outgoing_message_round_trips() {
         },
         correlation_id: uuid::Uuid::nil(),
         reply_to: Some("msg-001".into()),
+        thread_id: None,
     };
     let json = serde_json::to_string(&msg).unwrap();
     let parsed: OutgoingMessage = serde_json::from_str(&json).unwrap();

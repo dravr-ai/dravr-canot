@@ -30,6 +30,7 @@ fn main() {
         },
         correlation_id: Uuid::new_v4(),
         reply_to: None,
+        thread_id: None,
     };
 
     // Render to channel-specific payload (Slack Block Kit JSON)

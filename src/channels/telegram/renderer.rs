@@ -80,6 +80,13 @@ impl ResponseRenderer for TelegramRenderer {
             }
         }
 
+        // Route reply to the correct forum topic thread
+        if let Some(ref thread_id) = msg.thread_id {
+            if let Ok(tid) = thread_id.parse::<i64>() {
+                payload["message_thread_id"] = json!(tid);
+            }
+        }
+
         Ok(payload)
     }
 

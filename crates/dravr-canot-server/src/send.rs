@@ -90,6 +90,7 @@ pub async fn handle(
         content: request.content,
         correlation_id: Uuid::new_v4(),
         reply_to: None,
+        thread_id: None,
     };
 
     match adapter.send(&outgoing, &config).await {

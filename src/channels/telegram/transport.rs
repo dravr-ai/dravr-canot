@@ -125,6 +125,15 @@ impl TransportAdapter for TelegramTransport {
             },
         );
 
+        // Extract forum topic thread ID for groups with Topics enabled
+        let metadata = message
+            .get("message_thread_id")
+            .and_then(Value::as_i64)
+            .map_or(
+                Value::Null,
+                |thread_id| serde_json::json!({ "message_thread_id": thread_id }),
+            );
+
         let incoming = IncomingMessage {
             channel_type: ChannelType::Telegram,
             sender_id: from_id.to_string(),
@@ -135,7 +144,7 @@ impl TransportAdapter for TelegramTransport {
             timestamp: Utc::now(),
             raw_payload: update,
             correlation_id: Uuid::new_v4(),
-            metadata: Value::Null,
+            metadata,
         };
 
         Ok(vec![incoming])
@@ -241,6 +250,15 @@ fn parse_callback_query(callback: &Value, update: &Value) -> Vec<IncomingMessage
     let callback_data = callback.get("data").and_then(Value::as_str).unwrap_or("");
     let callback_id = callback.get("id").and_then(Value::as_str).unwrap_or("0");
 
+    // Extract forum topic thread ID from the original message context
+    let metadata = callback
+        .pointer("/message/message_thread_id")
+        .and_then(Value::as_i64)
+        .map_or(
+            Value::Null,
+            |thread_id| serde_json::json!({ "message_thread_id": thread_id }),
+        );
+
     let incoming = IncomingMessage {
         channel_type: ChannelType::Telegram,
         sender_id: from_id.to_string(),
@@ -253,7 +271,7 @@ fn parse_callback_query(callback: &Value, update: &Value) -> Vec<IncomingMessage
         timestamp: Utc::now(),
         raw_payload: update.clone(),
         correlation_id: Uuid::new_v4(),
-        metadata: Value::Null,
+        metadata,
     };
 
     vec![incoming]

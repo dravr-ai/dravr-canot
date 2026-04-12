@@ -158,6 +158,7 @@ impl PermissionRelay {
             content: MessageContent::Text { body: prompt },
             correlation_id: uuid::Uuid::new_v4(),
             reply_to: None,
+            thread_id: None,
         };
 
         let Some(adapter) = registry.get(&channel_type) else {

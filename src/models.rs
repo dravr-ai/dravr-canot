@@ -220,6 +220,8 @@ pub struct OutgoingMessage {
     pub correlation_id: Uuid,
     /// Message ID to reply to (platform-specific threading)
     pub reply_to: Option<String>,
+    /// Forum topic or thread identifier (e.g., Telegram `message_thread_id`)
+    pub thread_id: Option<String>,
 }
 
 // ============================================================================

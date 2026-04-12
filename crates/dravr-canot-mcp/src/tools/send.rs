@@ -77,8 +77,8 @@ impl McpTool<ServerState> for SendMessage {
                 body: content.to_owned(),
             },
             correlation_id: uuid::Uuid::new_v4(),
-
             reply_to,
+            thread_id: None,
         };
 
         let guard = state.read().await;
