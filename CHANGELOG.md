@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.4] — 2026-04-12
+
+### Added
+
+- feat(telegram): add forum topic support via message_thread_id Extract thread_id from inbound messages, propagate through OutgoingMessage, render in sendMessage
+- feat: add dravr-canot-claude-channel crate MCP stdio server bridging Slack/Telegram webhooks to Claude Code sessions
+
+
+
 ## [0.4.3] — 2026-04-10
 
 ### Other
