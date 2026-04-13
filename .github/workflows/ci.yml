@@ -62,27 +62,28 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace --features all-channels
 
-  test-macos:
-    name: Tests (macOS)
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo test --workspace --features all-channels
-
-  test-windows:
-    name: Tests (Windows)
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo test --workspace --features all-channels
+  # Disabled while repo is private (GitHub Free 2000-min quota). Restore if made public again.
+  # test-macos:
+  #   name: Tests (macOS)
+  #   runs-on: macos-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         submodules: recursive
+  #     - uses: dtolnay/rust-toolchain@stable
+  #     - uses: Swatinem/rust-cache@v2
+  #     - run: cargo test --workspace --features all-channels
+  #
+  # test-windows:
+  #   name: Tests (Windows)
+  #   runs-on: windows-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         submodules: recursive
+  #     - uses: dtolnay/rust-toolchain@stable
+  #     - uses: Swatinem/rust-cache@v2
+  #     - run: cargo test --workspace --features all-channels
 
   validate:
     name: Architectural Validation

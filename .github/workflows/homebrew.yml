@@ -1,9 +1,10 @@
 name: Homebrew
 
 on:
-  push:
-    tags:
-      - 'v*'
+  # Disabled while repo is private (GitHub Free 2000-min quota). Restore if made public again.
+  # push:
+  #   tags:
+  #     - 'v*'
   workflow_dispatch:
 
 permissions:
@@ -15,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest]  # macos-latest disabled while repo is private (GitHub Free quota)
     runs-on: ${{ matrix.os }}
     steps:
       - name: Install from tap
