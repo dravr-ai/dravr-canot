@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.5] — 2026-04-20
+
+### Added
+
+- feat(agui): SSE consumer + StatusAdapter + Telegram implementation AgUiConsumer streams AG-UI events over SSE; StatusAdapter trait + Telegram impl render progress via editMessageText (1.1s client-side throttle, bypassable for tests); drive_status_updates docs clarify caller owns finalize lifecycle.
+
+
+
 ## [0.4.4] — 2026-04-12
 
 ### Added
