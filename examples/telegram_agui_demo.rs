@@ -36,10 +36,11 @@ use dravr_canot::channels::telegram::agui_status::TelegramStatusAdapter;
 use std::env;
 use std::error::Error;
 use std::sync::Arc;
+use tracing_subscriber::fmt;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    tracing_subscriber::fmt::init();
+    fmt::init();
 
     let bot_token = env::var("TELEGRAM_BOT_TOKEN").expect("TELEGRAM_BOT_TOKEN must be set");
     let chat_id = env::var("TELEGRAM_CHAT_ID").expect("TELEGRAM_CHAT_ID must be set");

@@ -36,19 +36,21 @@ use async_trait::async_trait;
 #[must_use]
 pub fn status_text_for_event(event: &AgUiEvent) -> Option<String> {
     match event {
-        AgUiEvent::RunStarted { .. } => Some("thinking…".to_owned()),
+        // RunStarted opens the turn with the generic placeholder.
+        // ToolCallResult clears the sticky "calling foo…" status so
+        // the user sees the tool advanced rather than a stuck
+        // placeholder; "thinking…" bridges back to whatever the next
+        // step emits. A failed tool follows up with either a fresh
+        // `ToolCallStart` (retry) or a `RunError` that overwrites this.
+        AgUiEvent::RunStarted { .. } | AgUiEvent::ToolCallResult { .. } => {
+            Some("thinking…".to_owned())
+        }
         AgUiEvent::StepStarted { step_name, .. } => Some(match step_name.as_str() {
             "prompt_assembly" => "reading your question…".to_owned(),
             "dispatch" => "generating response…".to_owned(),
             other => format!("{other}…"),
         }),
         AgUiEvent::ToolCallStart { tool_name, .. } => Some(format!("calling {tool_name}…")),
-        // Tool-call result: clear the "calling foo…" sticky status so the
-        // user sees the tool advanced rather than a stuck placeholder. We
-        // use a short "thinking…" to bridge back to whatever the next
-        // step emits; a failed tool will follow up with either a fresh
-        // `ToolCallStart` (retry) or a `RunError` that overwrites this.
-        AgUiEvent::ToolCallResult { .. } => Some("thinking…".to_owned()),
         AgUiEvent::RunError { message, .. } => Some(format!("error: {message}")),
         AgUiEvent::StepFinished { .. } | AgUiEvent::RunFinished { .. } | AgUiEvent::Unknown => None,
     }

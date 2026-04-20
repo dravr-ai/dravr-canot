@@ -4,6 +4,9 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright (c) 2026 dravr.ai
 
+/// AG-UI progress status adapter (feature-gated)
+#[cfg(feature = "agui")]
+pub mod agui_status;
 /// Discord Gateway WebSocket client for real-time message events
 pub mod gateway;
 /// Embed-based message renderer for Discord
