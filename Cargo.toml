@@ -94,6 +94,9 @@ channel-messenger = []
 channel-discord = ["dep:ed25519-dalek", "dep:tokio-tungstenite", "dep:futures-util", "dep:tokio"]
 channel-slack = []
 channel-telegram = []
+# Enable the AG-UI SSE consumer for rendering pipeline progress to
+# channel users (e.g. Telegram status text). See src/agui_consumer.rs.
+agui = ["dep:futures-util", "dep:tokio", "reqwest/stream"]
 all-channels = ["channel-whatsapp", "channel-messenger", "channel-discord", "channel-slack", "channel-telegram"]
 
 [dependencies]
@@ -123,6 +126,20 @@ tokio = { version = "1.45", features = ["rt", "time", "sync", "macros"], optiona
 [dev-dependencies]
 tokio = { version = "1.45", features = ["full", "test-util"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# AG-UI cross-layer E2E tests run a mock SSE server and a mock Telegram
+# Bot API in-process via axum. Only used under --features agui.
+axum = { version = "0.8", features = ["json", "tokio", "http1"], default-features = false }
+futures-util = "0.3"
 
 [lints]
 workspace = true
+
+# The Telegram AG-UI demo wires the full SSE → editMessageText loop
+# against the live pierre-server AG-UI endpoint. It's a runnable proof
+# of the trace behavior that `tests/agui_telegram_e2e.rs` asserts on
+# mocks. Feature-gated because it depends on the agui + telegram
+# code paths.
+[[example]]
+name = "telegram_agui_demo"
+path = "examples/telegram_agui_demo.rs"
+required-features = ["agui", "channel-telegram"]

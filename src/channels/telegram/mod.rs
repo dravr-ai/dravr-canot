@@ -4,6 +4,9 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright (c) 2026 dravr.ai
 
+/// AG-UI progress status adapter (feature-gated)
+#[cfg(feature = "agui")]
+pub mod agui_status;
 /// HTML parse mode message renderer for Telegram
 pub mod renderer;
 /// Secret token verification and webhook parsing for Telegram

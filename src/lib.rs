@@ -73,6 +73,22 @@ pub mod meta_signature;
 /// Per-channel adapter implementations
 pub mod channels;
 
+/// AG-UI SSE consumer for streaming pipeline progress to channel users.
+///
+/// Feature-gated behind `agui`; requires the `reqwest/stream`
+/// back-pressure support. See module docs for the expected usage in
+/// channel adapters that render per-stage status (e.g. Telegram).
+#[cfg(feature = "agui")]
+pub mod agui_consumer;
+
+/// Channel-agnostic AG-UI status rendering.
+///
+/// Maps lifecycle / step / tool-call events into short human-readable
+/// text and drives per-channel edit-message adapters (Telegram's
+/// `editMessageText`, etc.).
+#[cfg(feature = "agui")]
+pub mod agui_status;
+
 // Re-export primary types for consumers
 pub use channel::MessagingChannel;
 pub use config_store::ChannelConfigStore;

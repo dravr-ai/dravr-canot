@@ -45,7 +45,7 @@ const MAX_RECONNECT_ATTEMPTS: u32 = 10;
 const RECONNECT_BASE_DELAY: Duration = Duration::from_secs(1);
 
 /// Maximum delay between reconnect attempts
-const RECONNECT_MAX_DELAY: Duration = Duration::from_secs(60);
+const RECONNECT_MAX_DELAY: Duration = Duration::from_mins(1);
 
 /// Configuration for the Discord Gateway client
 #[derive(Clone)]
