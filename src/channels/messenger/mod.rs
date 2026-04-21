@@ -21,6 +21,7 @@ use crate::channel::MessagingChannel;
 use crate::descriptor::ChannelDescriptor;
 use crate::renderer::ResponseRenderer;
 use crate::transport::TransportAdapter;
+use crate::turn::ConversationTurnId;
 
 use self::renderer::MessengerRenderer;
 use self::transport::MessengerTransport;
@@ -99,14 +100,15 @@ impl MessagingChannel for MessengerChannel {
         config: &ChannelConfig,
     ) -> MessagingResult<DeliveryReceipt> {
         let payload = self.render(msg)?;
-        self.transport.send_raw(&payload, config).await
+        self.transport.send_raw(&payload, msg.turn_id, config).await
     }
 
     async fn send_raw(
         &self,
         payload: &Value,
+        turn_id: ConversationTurnId,
         config: &ChannelConfig,
     ) -> MessagingResult<DeliveryReceipt> {
-        self.transport.send_raw(payload, config).await
+        self.transport.send_raw(payload, turn_id, config).await
     }
 }

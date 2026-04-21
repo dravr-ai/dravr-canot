@@ -10,10 +10,10 @@ use axum::response::IntoResponse;
 use axum::Json;
 use serde::Deserialize;
 use tracing::{debug, warn};
-use uuid::Uuid;
 
 use dravr_canot::error::ErrorResponse;
 use dravr_canot::models::{ChannelConfig, ChannelType, MessageContent, OutgoingMessage};
+use dravr_canot::turn::ConversationTurnId;
 
 use crate::state::SharedState;
 
@@ -26,6 +26,10 @@ pub struct SendRequest {
     pub recipient_id: String,
     /// Message content to send
     pub content: MessageContent,
+    /// Conversation-turn correlation identifier carried from the inbound
+    /// boundary. Callers must propagate the identifier they received;
+    /// this endpoint never generates one.
+    pub turn_id: ConversationTurnId,
     /// Optional channel configuration override (uses server config if omitted)
     #[serde(default)]
     pub config: Option<ChannelConfig>,
@@ -88,7 +92,7 @@ pub async fn handle(
         channel_type: request.channel_type,
         recipient_id: request.recipient_id,
         content: request.content,
-        correlation_id: Uuid::new_v4(),
+        turn_id: request.turn_id,
         reply_to: None,
         thread_id: None,
     };

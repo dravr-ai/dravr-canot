@@ -18,6 +18,7 @@ use crate::http_client::api_client;
 
 use crate::meta_signature::verify_meta_signature;
 use crate::transport::TransportAdapter;
+use crate::turn::ConversationTurnId;
 
 /// Meta Messenger Platform transport adapter
 ///
@@ -92,7 +93,7 @@ impl TransportAdapter for MessengerTransport {
                         channel_message_id: mid.to_owned(),
                         timestamp: Utc::now(),
                         raw_payload: event.clone(),
-                        correlation_id: Uuid::new_v4(),
+                        turn_id: ConversationTurnId::new(),
                         metadata: Value::Null,
                     });
                     continue;
@@ -117,7 +118,7 @@ impl TransportAdapter for MessengerTransport {
                         channel_message_id: mid.to_owned(),
                         timestamp: Utc::now(),
                         raw_payload: event.clone(),
-                        correlation_id: Uuid::new_v4(),
+                        turn_id: ConversationTurnId::new(),
                         metadata: Value::Null,
                     });
                 }
@@ -130,6 +131,7 @@ impl TransportAdapter for MessengerTransport {
     async fn send_raw(
         &self,
         payload: &Value,
+        turn_id: ConversationTurnId,
         config: &ChannelConfig,
     ) -> MessagingResult<DeliveryReceipt> {
         let access_token =
@@ -186,6 +188,7 @@ impl TransportAdapter for MessengerTransport {
             channel_message_id,
             status: DeliveryStatus::Sent,
             timestamp: Utc::now(),
+            turn_id,
         })
     }
 }

@@ -7,6 +7,7 @@
 use std::collections::HashMap;
 
 use dravr_canot::models::{ChannelConfig, ChannelType, MessageContent, OutgoingMessage};
+use dravr_canot::turn::ConversationTurnId;
 use dravr_canot::ChannelRegistry;
 use regex::Regex;
 use tokio::sync::RwLock;
@@ -42,6 +43,9 @@ pub struct PermissionRequestParams<'a> {
     pub sender_channel_type: &'a str,
     /// Chat ID of the sender to relay to
     pub sender_chat_id: &'a str,
+    /// Conversation-turn correlation identifier carried from the inbound
+    /// message that triggered this permission request.
+    pub turn_id: ConversationTurnId,
 }
 
 /// Permission relay that routes tool approval prompts to the sender who
@@ -156,7 +160,7 @@ impl PermissionRelay {
             channel_type,
             recipient_id: params.sender_chat_id.to_owned(),
             content: MessageContent::Text { body: prompt },
-            correlation_id: uuid::Uuid::new_v4(),
+            turn_id: params.turn_id,
             reply_to: None,
             thread_id: None,
         };
@@ -441,6 +445,7 @@ mod tests {
     use std::sync::Arc;
 
     use dravr_canot::models::MessageContent;
+    use dravr_canot::turn::ConversationTurnId;
 
     use crate::test_support::{sample_config, MockAdapter};
 
@@ -464,6 +469,7 @@ mod tests {
             description: "rm -rf /",
             sender_channel_type: "slack",
             sender_chat_id: "C1",
+            turn_id: ConversationTurnId::new(),
         };
         relay.handle_request(&params, &registry, &configs).await;
 
@@ -501,6 +507,7 @@ mod tests {
             description: "ls",
             sender_channel_type: "slack",
             sender_chat_id: "C1",
+            turn_id: ConversationTurnId::new(),
         };
         relay.handle_request(&params, &registry, &configs).await;
 
@@ -521,6 +528,7 @@ mod tests {
             description: "ls",
             sender_channel_type: "bogus",
             sender_chat_id: "C1",
+            turn_id: ConversationTurnId::new(),
         };
         relay.handle_request(&params, &registry, &configs).await;
 
@@ -542,6 +550,7 @@ mod tests {
             description: "ls",
             sender_channel_type: "telegram",
             sender_chat_id: "C1",
+            turn_id: ConversationTurnId::new(),
         };
         relay.handle_request(&params, &registry, &configs).await;
 
@@ -565,6 +574,7 @@ mod tests {
             description: "create file",
             sender_channel_type: "slack",
             sender_chat_id: "C1",
+            turn_id: ConversationTurnId::new(),
         };
         relay.handle_request(&params, &registry, &configs).await;
 
@@ -595,6 +605,7 @@ mod tests {
             description: "create file",
             sender_channel_type: "slack",
             sender_chat_id: "C_ORIG",
+            turn_id: ConversationTurnId::new(),
         };
         relay.handle_request(&params, &registry, &configs).await;
 

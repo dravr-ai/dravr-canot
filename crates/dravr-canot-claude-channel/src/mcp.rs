@@ -10,11 +10,13 @@ use std::io::{self, Write};
 use std::sync::Arc;
 
 use dravr_canot::models::{ChannelConfig, ChannelType, MessageContent, OutgoingMessage};
+use dravr_canot::turn::ConversationTurnId;
 use dravr_canot::ChannelRegistry;
 use serde_json::{json, Value};
 use tokio::io::{stdin as tokio_stdin, AsyncBufReadExt, BufReader};
 use tokio::sync::{mpsc, Mutex};
 use tracing::{debug, error, warn};
+use uuid::Uuid;
 
 use crate::permission::{PermissionRelay, PermissionRequestParams};
 
@@ -30,6 +32,9 @@ pub enum ChannelEvent {
         chat_id: String,
         /// Message text content
         content: String,
+        /// Conversation-turn correlation identifier generated at the
+        /// webhook boundary and propagated through every downstream call.
+        turn_id: ConversationTurnId,
     },
 }
 
@@ -40,6 +45,7 @@ pub enum ChannelEvent {
 struct SenderContext {
     channel_type: String,
     chat_id: String,
+    turn_id: ConversationTurnId,
 }
 
 /// Thread-safe stdout writer for sending JSON-RPC notifications
@@ -184,6 +190,7 @@ async fn handle_stdin_message(
                         description,
                         sender_channel_type: &ctx.channel_type,
                         sender_chat_id: &ctx.chat_id,
+                        turn_id: ctx.turn_id,
                     };
                     permission_relay
                         .handle_request(&req_params, &registry, &configs)
@@ -226,6 +233,7 @@ async fn handle_channel_event(
             channel_type,
             chat_id,
             content,
+            turn_id,
         } => {
             // Check if this is a permission verdict reply (validated against pending requests)
             if let Some(verdict) = permission_relay
@@ -246,6 +254,7 @@ async fn handle_channel_event(
                 *last_sender = Some(SenderContext {
                     channel_type: channel_type.clone(),
                     chat_id: chat_id.clone(),
+                    turn_id: *turn_id,
                 });
                 return Ok(());
             }
@@ -254,10 +263,12 @@ async fn handle_channel_event(
             *last_sender = Some(SenderContext {
                 channel_type: channel_type.clone(),
                 chat_id: chat_id.clone(),
+                turn_id: *turn_id,
             });
 
             // Forward as channel notification
-            let notification = build_channel_notification(sender, channel_type, chat_id, content);
+            let notification =
+                build_channel_notification(sender, channel_type, chat_id, content, *turn_id);
             write_json(stdout, &notification).await?;
         }
     }
@@ -317,9 +328,14 @@ fn build_tools_list_response(id: &Value) -> Value {
                             "text": {
                                 "type": "string",
                                 "description": "The message text to send"
+                            },
+                            "turn_id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "description": "Conversation-turn correlation identifier from the inbound message tag (UUID). Must be propagated, not regenerated."
                             }
                         },
-                        "required": ["channel_type", "chat_id", "text"]
+                        "required": ["channel_type", "chat_id", "text", "turn_id"]
                     }
                 }
             ]
@@ -355,13 +371,21 @@ async fn handle_tool_call(
         .and_then(Value::as_str)
         .unwrap_or("");
     let text = arguments.get("text").and_then(Value::as_str).unwrap_or("");
+    let turn_id_str = arguments
+        .get("turn_id")
+        .and_then(Value::as_str)
+        .unwrap_or("");
 
-    if channel_type_str.is_empty() || chat_id.is_empty() || text.is_empty() {
+    if channel_type_str.is_empty()
+        || chat_id.is_empty()
+        || text.is_empty()
+        || turn_id_str.is_empty()
+    {
         return json!({
             "jsonrpc": "2.0",
             "id": id,
             "result": {
-                "content": [{"type": "text", "text": "Missing required arguments: channel_type, chat_id, text"}],
+                "content": [{"type": "text", "text": "Missing required arguments: channel_type, chat_id, text, turn_id"}],
                 "isError": true
             }
         });
@@ -381,7 +405,21 @@ async fn handle_tool_call(
         }
     };
 
-    let result_text = send_reply(&channel_type, chat_id, text, registry, configs).await;
+    let turn_id = match Uuid::parse_str(turn_id_str) {
+        Ok(id) => ConversationTurnId::from_uuid(id),
+        Err(e) => {
+            return json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": {
+                    "content": [{"type": "text", "text": format!("Invalid turn_id (expected UUID): {e}")}],
+                    "isError": true
+                }
+            });
+        }
+    };
+
+    let result_text = send_reply(&channel_type, chat_id, text, turn_id, registry, configs).await;
 
     json!({
         "jsonrpc": "2.0",
@@ -397,6 +435,7 @@ pub async fn send_reply(
     channel_type: &ChannelType,
     chat_id: &str,
     text: &str,
+    turn_id: ConversationTurnId,
     registry: &ChannelRegistry,
     configs: &HashMap<ChannelType, ChannelConfig>,
 ) -> String {
@@ -414,7 +453,7 @@ pub async fn send_reply(
         content: MessageContent::Text {
             body: text.to_owned(),
         },
-        correlation_id: uuid::Uuid::new_v4(),
+        turn_id,
         reply_to: None,
         thread_id: None,
     };
@@ -436,6 +475,7 @@ fn build_channel_notification(
     channel_type: &str,
     chat_id: &str,
     content: &str,
+    turn_id: ConversationTurnId,
 ) -> Value {
     json!({
         "jsonrpc": "2.0",
@@ -445,7 +485,8 @@ fn build_channel_notification(
             "meta": {
                 "sender": sender,
                 "channel_type": channel_type,
-                "chat_id": chat_id
+                "chat_id": chat_id,
+                "turn_id": turn_id
             }
         }
     })
@@ -498,16 +539,19 @@ mod tests {
         assert!(required_names.contains(&"channel_type"));
         assert!(required_names.contains(&"chat_id"));
         assert!(required_names.contains(&"text"));
+        assert!(required_names.contains(&"turn_id"));
     }
 
     #[test]
     fn channel_notification_format() {
-        let notif = build_channel_notification("Alice", "slack", "C123", "hello world");
+        let turn_id = ConversationTurnId::new();
+        let notif = build_channel_notification("Alice", "slack", "C123", "hello world", turn_id);
         assert_eq!(notif["method"], "notifications/claude/channel");
         assert_eq!(notif["params"]["content"], "hello world");
         assert_eq!(notif["params"]["meta"]["sender"], "Alice");
         assert_eq!(notif["params"]["meta"]["channel_type"], "slack");
         assert_eq!(notif["params"]["meta"]["chat_id"], "C123");
+        assert_eq!(notif["params"]["meta"]["turn_id"], turn_id.to_string());
         // Must not have an id field (notifications are fire-and-forget)
         assert!(notif.get("id").is_none());
     }
@@ -519,7 +563,13 @@ mod tests {
         let mut configs = HashMap::new();
         configs.insert(ChannelType::Slack, sample_config(ChannelType::Slack));
 
-        let args = json!({ "channel_type": "slack", "chat_id": "C123", "text": "hi there" });
+        let turn_id = ConversationTurnId::new();
+        let args = json!({
+            "channel_type": "slack",
+            "chat_id": "C123",
+            "text": "hi there",
+            "turn_id": turn_id.to_string(),
+        });
         let resp = handle_tool_call(&json!(1), "reply", &args, &registry, &configs).await;
 
         assert_eq!(resp["id"], 1);
@@ -532,6 +582,7 @@ mod tests {
         let sent = adapter.sent.lock().await;
         assert_eq!(sent.len(), 1);
         assert_eq!(sent[0].recipient_id, "C123");
+        assert_eq!(sent[0].turn_id, turn_id);
         let MessageContent::Text { body } = &sent[0].content else {
             unreachable!("reply tool should produce a text message"); // Safe: test assertion
         };
@@ -575,7 +626,12 @@ mod tests {
         let registry = registry_with(adapter);
         let configs = HashMap::new();
 
-        let args = json!({ "channel_type": "bogus", "chat_id": "C1", "text": "hi" });
+        let args = json!({
+            "channel_type": "bogus",
+            "chat_id": "C1",
+            "text": "hi",
+            "turn_id": ConversationTurnId::new().to_string(),
+        });
         let resp = handle_tool_call(&json!(1), "reply", &args, &registry, &configs).await;
         assert_eq!(resp["result"]["isError"], true);
         let text = resp["result"]["content"][0]["text"].as_str().expect("text"); // Safe: test assertion
@@ -589,7 +645,16 @@ mod tests {
         let registry = registry_with(adapter);
         let configs = HashMap::new();
 
-        let result = send_reply(&ChannelType::Telegram, "C1", "hi", &registry, &configs).await;
+        let turn_id = ConversationTurnId::new();
+        let result = send_reply(
+            &ChannelType::Telegram,
+            "C1",
+            "hi",
+            turn_id,
+            &registry,
+            &configs,
+        )
+        .await;
         assert!(result.contains("not registered"));
     }
 
@@ -599,7 +664,16 @@ mod tests {
         let registry = registry_with(adapter);
         let configs = HashMap::new(); // Registered but not configured
 
-        let result = send_reply(&ChannelType::Slack, "C1", "hi", &registry, &configs).await;
+        let turn_id = ConversationTurnId::new();
+        let result = send_reply(
+            &ChannelType::Slack,
+            "C1",
+            "hi",
+            turn_id,
+            &registry,
+            &configs,
+        )
+        .await;
         assert!(result.contains("No configuration"));
     }
 
@@ -610,7 +684,16 @@ mod tests {
         let mut configs = HashMap::new();
         configs.insert(ChannelType::Slack, sample_config(ChannelType::Slack));
 
-        let result = send_reply(&ChannelType::Slack, "C1", "hi", &registry, &configs).await;
+        let turn_id = ConversationTurnId::new();
+        let result = send_reply(
+            &ChannelType::Slack,
+            "C1",
+            "hi",
+            turn_id,
+            &registry,
+            &configs,
+        )
+        .await;
         assert!(result.starts_with("Failed to send"), "got: {result}");
     }
 }

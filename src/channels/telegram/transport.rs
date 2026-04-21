@@ -18,6 +18,7 @@ use uuid::Uuid;
 use crate::http_client::api_client;
 
 use crate::transport::TransportAdapter;
+use crate::turn::ConversationTurnId;
 
 /// Telegram Bot API transport adapter
 ///
@@ -143,7 +144,7 @@ impl TransportAdapter for TelegramTransport {
             channel_message_id: message_id.to_string(),
             timestamp: Utc::now(),
             raw_payload: update,
-            correlation_id: Uuid::new_v4(),
+            turn_id: ConversationTurnId::new(),
             metadata,
         };
 
@@ -153,6 +154,7 @@ impl TransportAdapter for TelegramTransport {
     async fn send_raw(
         &self,
         payload: &Value,
+        turn_id: ConversationTurnId,
         config: &ChannelConfig,
     ) -> MessagingResult<DeliveryReceipt> {
         let bot_token =
@@ -209,6 +211,7 @@ impl TransportAdapter for TelegramTransport {
             channel_message_id,
             status: DeliveryStatus::Sent,
             timestamp: Utc::now(),
+            turn_id,
         })
     }
 }
@@ -270,7 +273,7 @@ fn parse_callback_query(callback: &Value, update: &Value) -> Vec<IncomingMessage
         channel_message_id: callback_id.to_owned(),
         timestamp: Utc::now(),
         raw_payload: update.clone(),
-        correlation_id: Uuid::new_v4(),
+        turn_id: ConversationTurnId::new(),
         metadata,
     };
 

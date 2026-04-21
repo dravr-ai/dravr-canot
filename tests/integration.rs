@@ -13,7 +13,9 @@ use dravr_canot::models::{
     MAX_OTP_FLOWS_PER_HOUR, OTP_TTL_MINUTES, RETRY_DELAYS_SECS,
 };
 use dravr_canot::registry::ChannelRegistry;
+use dravr_canot::turn::ConversationTurnId;
 use std::str::FromStr;
+use uuid::Uuid;
 
 // ============================================================================
 // ChannelType parsing
@@ -405,6 +407,7 @@ fn outbound_queue_entry_round_trips() {
         tenant_id: "tenant-1".into(),
         channel_type: ChannelType::Slack,
         payload: serde_json::json!({"text": "hello"}),
+        turn_id: ConversationTurnId::new(),
         status: "pending".into(),
         attempt_count: 0,
         next_retry_at: None,
@@ -427,7 +430,7 @@ fn outgoing_message_round_trips() {
         content: MessageContent::Text {
             body: "test".into(),
         },
-        correlation_id: uuid::Uuid::nil(),
+        turn_id: ConversationTurnId::from_uuid(Uuid::nil()),
         reply_to: Some("msg-001".into()),
         thread_id: None,
     };

@@ -19,6 +19,7 @@ use dravr_canot::models::{
     ChannelConfig, ChannelType, DeliveryReceipt, DeliveryStatus, IncomingMessage, MessageContent,
     OutgoingMessage,
 };
+use dravr_canot::turn::ConversationTurnId;
 
 /// Configurable mock adapter for testing the webhook pipeline, MCP tool calls,
 /// and permission relay without touching real messaging APIs.
@@ -112,18 +113,21 @@ impl MessagingChannel for MockAdapter {
                 retryable: false,
             });
         }
+        let turn_id = msg.turn_id;
         self.sent.lock().await.push(msg.clone());
         Ok(DeliveryReceipt {
             message_id: Uuid::new_v4().to_string(),
             channel_message_id: Some("mock-id".to_owned()),
             status: DeliveryStatus::Sent,
             timestamp: Utc::now(),
+            turn_id,
         })
     }
 
     async fn send_raw(
         &self,
         _payload: &Value,
+        turn_id: ConversationTurnId,
         _config: &ChannelConfig,
     ) -> MessagingResult<DeliveryReceipt> {
         Ok(DeliveryReceipt {
@@ -131,6 +135,7 @@ impl MessagingChannel for MockAdapter {
             channel_message_id: None,
             status: DeliveryStatus::Sent,
             timestamp: Utc::now(),
+            turn_id,
         })
     }
 }
@@ -153,7 +158,7 @@ pub fn sample_incoming(
         channel_message_id: "mock-message-id".to_owned(),
         timestamp: Utc::now(),
         raw_payload: json!({}),
-        correlation_id: Uuid::new_v4(),
+        turn_id: ConversationTurnId::new(),
         metadata: json!({}),
     }
 }

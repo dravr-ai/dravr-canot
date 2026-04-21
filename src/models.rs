@@ -10,7 +10,8 @@ use std::str::FromStr;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use uuid::Uuid;
+
+use crate::turn::ConversationTurnId;
 
 // ============================================================================
 // Constants
@@ -201,8 +202,11 @@ pub struct IncomingMessage {
     pub timestamp: DateTime<Utc>,
     /// Raw webhook payload for debugging and audit
     pub raw_payload: Value,
-    /// Correlation ID for distributed tracing
-    pub correlation_id: Uuid,
+    /// Conversation-turn correlation identifier.
+    ///
+    /// Generated once at the webhook boundary and threaded through every
+    /// downstream call produced by this message. Never regenerated.
+    pub turn_id: ConversationTurnId,
     /// Additional platform-specific metadata
     pub metadata: Value,
 }
@@ -216,8 +220,9 @@ pub struct OutgoingMessage {
     pub recipient_id: String,
     /// Message content to send
     pub content: MessageContent,
-    /// Correlation ID for distributed tracing
-    pub correlation_id: Uuid,
+    /// Conversation-turn correlation identifier carried from the inbound
+    /// boundary. Populated by the caller; never generated here.
+    pub turn_id: ConversationTurnId,
     /// Message ID to reply to (platform-specific threading)
     pub reply_to: Option<String>,
     /// Forum topic or thread identifier (e.g., Telegram `message_thread_id`)
@@ -257,6 +262,10 @@ pub struct DeliveryReceipt {
     pub status: DeliveryStatus,
     /// Timestamp of the delivery attempt
     pub timestamp: DateTime<Utc>,
+    /// Conversation-turn correlation identifier carried from the outbound
+    /// message. Lets downstream observers (test harness, investigator)
+    /// key off the receipt.
+    pub turn_id: ConversationTurnId,
 }
 
 // ============================================================================
@@ -276,6 +285,10 @@ pub struct OutboundQueueEntry {
     pub channel_type: ChannelType,
     /// Serialized outbound payload
     pub payload: Value,
+    /// Conversation-turn correlation identifier carried through the retry
+    /// loop. Passed to `send_raw` on every attempt so the receipt stays
+    /// keyed to the originating turn.
+    pub turn_id: ConversationTurnId,
     /// Current queue status (pending, retrying:N, sent, dlq)
     pub status: String,
     /// Number of delivery attempts made

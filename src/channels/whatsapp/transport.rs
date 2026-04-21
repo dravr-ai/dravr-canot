@@ -18,6 +18,7 @@ use crate::http_client::api_client;
 
 use crate::meta_signature::verify_meta_signature;
 use crate::transport::TransportAdapter;
+use crate::turn::ConversationTurnId;
 
 /// `WhatsApp` Business Cloud API transport adapter
 ///
@@ -103,7 +104,7 @@ impl TransportAdapter for WhatsAppTransport {
                         channel_message_id: channel_message_id.to_owned(),
                         timestamp: Utc::now(),
                         raw_payload: msg.clone(),
-                        correlation_id: Uuid::new_v4(),
+                        turn_id: ConversationTurnId::new(),
                         metadata: Value::Null,
                     });
                 }
@@ -116,6 +117,7 @@ impl TransportAdapter for WhatsAppTransport {
     async fn send_raw(
         &self,
         payload: &Value,
+        turn_id: ConversationTurnId,
         config: &ChannelConfig,
     ) -> MessagingResult<DeliveryReceipt> {
         let access_token =
@@ -184,6 +186,7 @@ impl TransportAdapter for WhatsAppTransport {
             channel_message_id,
             status: DeliveryStatus::Sent,
             timestamp: Utc::now(),
+            turn_id,
         })
     }
 }

@@ -28,6 +28,9 @@ pub mod error;
 /// Data models: channel types, messages, delivery receipts, configuration
 pub mod models;
 
+/// Conversation-turn correlation identifier threaded through a user utterance
+pub mod turn;
+
 /// Runtime configuration loaded from environment variables
 pub mod config;
 
@@ -97,3 +100,4 @@ pub use env_config_store::EnvConfigStore;
 pub use registry::ChannelRegistry;
 pub use renderer::ResponseRenderer;
 pub use transport::TransportAdapter;
+pub use turn::ConversationTurnId;

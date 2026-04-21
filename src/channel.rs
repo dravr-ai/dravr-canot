@@ -12,6 +12,7 @@ use crate::error::MessagingResult;
 use crate::models::{
     ChannelConfig, ChannelType, DeliveryReceipt, IncomingMessage, OutgoingMessage,
 };
+use crate::turn::ConversationTurnId;
 
 /// Unified messaging channel interface
 ///
@@ -67,10 +68,13 @@ pub trait MessagingChannel: Send + Sync {
         config: &ChannelConfig,
     ) -> MessagingResult<DeliveryReceipt>;
 
-    /// Send a pre-rendered payload directly to the channel API
+    /// Send a pre-rendered payload directly to the channel API.
     ///
     /// Used by the outbound retry worker where payloads are already rendered
-    /// and stored in the queue.
+    /// and stored in the queue. `turn_id` is the conversation-turn
+    /// identifier carried from the originating outbound message; the
+    /// retry worker pulls it from the queue entry and passes it through
+    /// so the resulting [`DeliveryReceipt`] stays keyed to the same turn.
     ///
     /// # Errors
     ///
@@ -78,6 +82,7 @@ pub trait MessagingChannel: Send + Sync {
     async fn send_raw(
         &self,
         payload: &Value,
+        turn_id: ConversationTurnId,
         config: &ChannelConfig,
     ) -> MessagingResult<DeliveryReceipt>;
 }

@@ -18,9 +18,9 @@ use tokio_tungstenite::tungstenite::Error as TungsteniteError;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
 use tokio_tungstenite::{connect_async, MaybeTlsStream};
 use tracing::{debug, error, info, warn};
-use uuid::Uuid;
 
 use crate::models::{ChannelType, IncomingMessage, MessageContent};
+use crate::turn::ConversationTurnId;
 
 /// Discord Gateway opcodes
 const OPCODE_DISPATCH: u64 = 0;
@@ -441,7 +441,7 @@ fn parse_message_create(data: &Value, bot_user_id: Option<&str>) -> Option<Incom
         channel_message_id: message_id.to_owned(),
         timestamp: Utc::now(),
         raw_payload: data.clone(),
-        correlation_id: Uuid::new_v4(),
+        turn_id: ConversationTurnId::new(),
         metadata: Value::Null,
     })
 }

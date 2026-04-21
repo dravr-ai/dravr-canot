@@ -23,6 +23,7 @@ use uuid::Uuid;
 use crate::http_client::api_client;
 
 use crate::transport::TransportAdapter;
+use crate::turn::ConversationTurnId;
 
 /// Slack Events API transport adapter
 ///
@@ -159,7 +160,7 @@ impl TransportAdapter for SlackTransport {
             channel_message_id: ts.to_owned(),
             timestamp: Utc::now(),
             raw_payload: payload,
-            correlation_id: Uuid::new_v4(),
+            turn_id: ConversationTurnId::new(),
             metadata: Value::Null,
         }])
     }
@@ -167,6 +168,7 @@ impl TransportAdapter for SlackTransport {
     async fn send_raw(
         &self,
         payload: &Value,
+        turn_id: ConversationTurnId,
         config: &ChannelConfig,
     ) -> MessagingResult<DeliveryReceipt> {
         let token =
@@ -233,6 +235,7 @@ impl TransportAdapter for SlackTransport {
             channel_message_id,
             status: DeliveryStatus::Sent,
             timestamp: Utc::now(),
+            turn_id,
         })
     }
 }
@@ -310,7 +313,7 @@ fn parse_block_actions(payload: &Value) -> Vec<IncomingMessage> {
                 channel_message_id: action_ts.to_owned(),
                 timestamp: Utc::now(),
                 raw_payload: payload.clone(),
-                correlation_id: Uuid::new_v4(),
+                turn_id: ConversationTurnId::new(),
                 metadata: Value::Null,
             })
         })

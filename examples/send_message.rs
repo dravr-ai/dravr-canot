@@ -8,8 +8,8 @@
 
 use dravr_canot::factory::create_adapter_from_config;
 use dravr_canot::models::{ChannelType, MessageContent, OutgoingMessage};
+use dravr_canot::turn::ConversationTurnId;
 use serde_json::json;
-use uuid::Uuid;
 
 fn main() {
     // Create a Slack adapter from a JSON config
@@ -28,7 +28,7 @@ fn main() {
         content: MessageContent::Text {
             body: "Hello from dravr-canot!".into(),
         },
-        correlation_id: Uuid::new_v4(),
+        turn_id: ConversationTurnId::new(),
         reply_to: None,
         thread_id: None,
     };

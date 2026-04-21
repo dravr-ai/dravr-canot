@@ -20,6 +20,7 @@ use uuid::Uuid;
 use crate::http_client::api_client;
 
 use crate::transport::TransportAdapter;
+use crate::turn::ConversationTurnId;
 
 /// Discord Bot API transport adapter
 ///
@@ -191,7 +192,7 @@ impl TransportAdapter for DiscordTransport {
             channel_message_id: interaction_id.to_owned(),
             timestamp: Utc::now(),
             raw_payload: payload,
-            correlation_id: Uuid::new_v4(),
+            turn_id: ConversationTurnId::new(),
             metadata: Value::Null,
         };
 
@@ -201,6 +202,7 @@ impl TransportAdapter for DiscordTransport {
     async fn send_raw(
         &self,
         payload: &Value,
+        turn_id: ConversationTurnId,
         config: &ChannelConfig,
     ) -> MessagingResult<DeliveryReceipt> {
         let bot_token =
@@ -279,6 +281,7 @@ impl TransportAdapter for DiscordTransport {
             channel_message_id,
             status: DeliveryStatus::Sent,
             timestamp: Utc::now(),
+            turn_id,
         })
     }
 }

@@ -6,9 +6,11 @@
 
 use async_trait::async_trait;
 use dravr_canot::models::{ChannelType, MessageContent, OutgoingMessage};
+use dravr_canot::turn::ConversationTurnId;
 use dravr_tronc::mcp::protocol::{CallToolResult, ToolDefinition};
 use dravr_tronc::McpTool;
 use serde_json::{json, Value};
+use uuid::Uuid;
 
 use crate::state::{ServerState, SharedState};
 
@@ -40,9 +42,14 @@ impl McpTool<ServerState> for SendMessage {
                     "reply_to": {
                         "type": "string",
                         "description": "Optional message ID to reply to (for threading)"
+                    },
+                    "turn_id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Conversation-turn correlation identifier threaded from the inbound boundary. Must be a UUID; the caller is responsible for propagating (not regenerating) it."
                     }
                 },
-                "required": ["channel_type", "recipient_id", "content"]
+                "required": ["channel_type", "recipient_id", "content", "turn_id"]
             }),
         }
     }
@@ -70,13 +77,26 @@ impl McpTool<ServerState> for SendMessage {
             .and_then(Value::as_str)
             .map(String::from);
 
+        let Some(turn_id_str) = arguments.get("turn_id").and_then(Value::as_str) else {
+            return CallToolResult::error(
+                "Missing 'turn_id' argument: caller must provide the conversation-turn identifier"
+                    .to_owned(),
+            );
+        };
+        let turn_id = match Uuid::parse_str(turn_id_str) {
+            Ok(id) => ConversationTurnId::from_uuid(id),
+            Err(e) => {
+                return CallToolResult::error(format!("Invalid turn_id (expected UUID): {e}"))
+            }
+        };
+
         let msg = OutgoingMessage {
             channel_type,
             recipient_id: recipient_id.to_owned(),
             content: MessageContent::Text {
                 body: content.to_owned(),
             },
-            correlation_id: uuid::Uuid::new_v4(),
+            turn_id,
             reply_to,
             thread_id: None,
         };
@@ -103,6 +123,7 @@ impl McpTool<ServerState> for SendMessage {
                     "channel_message_id": receipt.channel_message_id,
                     "delivery_status": receipt.status,
                     "timestamp": receipt.timestamp.to_rfc3339(),
+                    "turn_id": receipt.turn_id,
                 })
                 .to_string(),
             ),

@@ -5,27 +5,27 @@
 // Copyright (c) 2026 dravr.ai
 
 use tracing::{info_span, Span};
-use uuid::Uuid;
 
 use crate::models::ChannelType;
+use crate::turn::ConversationTurnId;
 
 /// Create a tracing span for an inbound webhook processing pipeline
 #[must_use]
-pub fn webhook_received_span(channel: ChannelType, correlation_id: Uuid) -> Span {
+pub fn webhook_received_span(channel: ChannelType, turn_id: ConversationTurnId) -> Span {
     info_span!(
         "messaging.webhook.received",
         channel = %channel,
-        correlation_id = %correlation_id,
+        turn_id = %turn_id,
     )
 }
 
 /// Create a tracing span for an outbound send attempt
 #[must_use]
-pub fn send_attempt_span(channel: ChannelType, correlation_id: Uuid, attempt: i32) -> Span {
+pub fn send_attempt_span(channel: ChannelType, turn_id: ConversationTurnId, attempt: i32) -> Span {
     info_span!(
         "messaging.send.attempt",
         channel = %channel,
-        correlation_id = %correlation_id,
+        turn_id = %turn_id,
         attempt = attempt,
     )
 }

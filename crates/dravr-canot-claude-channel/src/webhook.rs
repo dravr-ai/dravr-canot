@@ -120,6 +120,7 @@ async fn handle_webhook(
             channel_type: channel_type.to_string(),
             chat_id,
             content: content_text,
+            turn_id: msg.turn_id,
         };
 
         match state.event_tx.try_send(event) {
@@ -253,6 +254,7 @@ mod tests {
                 channel_type,
                 chat_id,
                 content,
+                turn_id: _,
             } => {
                 assert_eq!(sender, "U123-name");
                 assert_eq!(channel_type, "slack");

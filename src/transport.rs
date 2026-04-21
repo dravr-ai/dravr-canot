@@ -10,6 +10,7 @@ use serde_json::Value;
 
 use crate::error::MessagingResult;
 use crate::models::{ChannelConfig, DeliveryReceipt, IncomingMessage};
+use crate::turn::ConversationTurnId;
 
 /// Low-level transport adapter for channel wire protocols
 ///
@@ -40,7 +41,12 @@ pub trait TransportAdapter: Send + Sync {
         body: &[u8],
     ) -> MessagingResult<Vec<IncomingMessage>>;
 
-    /// Send a pre-rendered payload to the channel API
+    /// Send a pre-rendered payload to the channel API.
+    ///
+    /// `turn_id` is the conversation-turn identifier carried from the
+    /// outbound message so that the returned [`DeliveryReceipt`] keys off
+    /// the same turn. Callers must pass the identifier they received
+    /// from upstream; the transport never generates one.
     ///
     /// # Errors
     ///
@@ -48,6 +54,7 @@ pub trait TransportAdapter: Send + Sync {
     async fn send_raw(
         &self,
         payload: &Value,
+        turn_id: ConversationTurnId,
         config: &ChannelConfig,
     ) -> MessagingResult<DeliveryReceipt>;
 }
