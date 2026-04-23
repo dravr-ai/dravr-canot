@@ -207,6 +207,14 @@ pub struct IncomingMessage {
     /// Generated once at the webhook boundary and threaded through every
     /// downstream call produced by this message. Never regenerated.
     pub turn_id: ConversationTurnId,
+    /// `true` when the sender is talking to the bot in a one-to-one
+    /// conversation (Telegram private chat, Slack IM, Discord DM channel,
+    /// `WhatsApp`, Messenger, AGUI web chat). `false` for group / supergroup
+    /// / channel / multi-party contexts. Populated per channel from the
+    /// transport's native chat-kind signal; serde defaults to `false` on
+    /// deserialization to keep older payloads compatible.
+    #[serde(default)]
+    pub is_direct_message: bool,
     /// Additional platform-specific metadata
     pub metadata: Value,
 }

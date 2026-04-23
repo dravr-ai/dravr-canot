@@ -430,6 +430,10 @@ fn parse_message_create(data: &Value, bot_user_id: Option<&str>) -> Option<Incom
     let channel_id = data.get("channel_id").and_then(Value::as_str).unwrap_or("");
     let message_id = data.get("id").and_then(Value::as_str).unwrap_or("0");
 
+    // Gateway MESSAGE_CREATE payloads omit guild_id for DM channels (channel
+    // types 1=DM, 3=GROUP_DM). Guild-scoped messages always include guild_id.
+    let is_direct_message = data.get("guild_id").is_none_or(Value::is_null);
+
     Some(IncomingMessage {
         channel_type: ChannelType::Discord,
         sender_id: author_id.to_owned(),
@@ -442,6 +446,7 @@ fn parse_message_create(data: &Value, bot_user_id: Option<&str>) -> Option<Incom
         timestamp: Utc::now(),
         raw_payload: data.clone(),
         turn_id: ConversationTurnId::new(),
+        is_direct_message,
         metadata: Value::Null,
     })
 }
@@ -512,6 +517,31 @@ mod tests {
             "expected Text content with body 'Yo Pierre', got {:?}",
             msg.content
         );
+    }
+
+    #[test]
+    fn parse_message_create_marks_guild_messages_as_not_direct_message() {
+        let data = json!({
+            "id": "msg-2",
+            "channel_id": "ch-guild",
+            "guild_id": "guild-7",
+            "content": "hello guild",
+            "author": {"id": "user-1", "username": "Chef"}
+        });
+        let msg = parse_message_create(&data, None).expect("user message"); // Safe: test payload is well-formed
+        assert!(!msg.is_direct_message);
+    }
+
+    #[test]
+    fn parse_message_create_marks_dm_without_guild_id_as_direct_message() {
+        let data = json!({
+            "id": "msg-3",
+            "channel_id": "ch-dm",
+            "content": "hello in DM",
+            "author": {"id": "user-1", "username": "Chef"}
+        });
+        let msg = parse_message_create(&data, None).expect("user message"); // Safe: test payload is well-formed
+        assert!(msg.is_direct_message);
     }
 
     #[test]

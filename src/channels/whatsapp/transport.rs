@@ -105,6 +105,10 @@ impl TransportAdapter for WhatsAppTransport {
                         timestamp: Utc::now(),
                         raw_payload: msg.clone(),
                         turn_id: ConversationTurnId::new(),
+                        // WhatsApp Cloud API only delivers 1:1 user→business
+                        // messages to webhooks; group chats are excluded by the
+                        // Meta product policy.
+                        is_direct_message: true,
                         metadata: Value::Null,
                     });
                 }

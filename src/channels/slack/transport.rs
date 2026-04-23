@@ -151,6 +151,11 @@ impl TransportAdapter for SlackTransport {
         let channel_id = event.get("channel").and_then(Value::as_str).unwrap_or("");
         let ts = event.get("ts").and_then(Value::as_str).unwrap_or("0");
 
+        // Slack Events API sets event.channel_type to "im" for 1:1 DMs,
+        // "channel" for public channels, "group" for private channels,
+        // "mpim" for multi-party DMs. Only "im" is a true 1:1.
+        let is_direct_message = event.get("channel_type").and_then(Value::as_str) == Some("im");
+
         Ok(vec![IncomingMessage {
             channel_type: ChannelType::Slack,
             sender_id: user_id.to_owned(),
@@ -161,6 +166,7 @@ impl TransportAdapter for SlackTransport {
             timestamp: Utc::now(),
             raw_payload: payload,
             turn_id: ConversationTurnId::new(),
+            is_direct_message,
             metadata: Value::Null,
         }])
     }
@@ -288,6 +294,12 @@ fn parse_block_actions(payload: &Value) -> Vec<IncomingMessage> {
         .and_then(Value::as_str)
         .unwrap_or("");
 
+    // Interactive block_actions payloads don't carry event.channel_type, but
+    // Slack channel IDs encode the kind as the first character: "D" = IM,
+    // "C" = public channel, "G" = private channel / group DM. See
+    // https://api.slack.com/types/conversation.
+    let is_direct_message = channel_id.starts_with('D');
+
     let Some(actions) = payload.get("actions").and_then(Value::as_array) else {
         debug!("Slack block_actions payload without actions array");
         return vec![];
@@ -314,6 +326,7 @@ fn parse_block_actions(payload: &Value) -> Vec<IncomingMessage> {
                 timestamp: Utc::now(),
                 raw_payload: payload.clone(),
                 turn_id: ConversationTurnId::new(),
+                is_direct_message,
                 metadata: Value::Null,
             })
         })
@@ -389,4 +402,33 @@ fn percent_decode(input: &str) -> String {
     }
 
     String::from_utf8(result).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn block_actions_use_channel_id_prefix_to_detect_dm() {
+        let dm_payload = json!({
+            "type": "block_actions",
+            "user": {"id": "U123", "name": "chef"},
+            "channel": {"id": "D456", "name": "directmessage"},
+            "actions": [{"action_id": "/coach select abc", "action_ts": "1700000000.000100"}]
+        });
+        let dm_msgs = parse_block_actions(&dm_payload);
+        assert_eq!(dm_msgs.len(), 1);
+        assert!(dm_msgs[0].is_direct_message);
+
+        let channel_payload = json!({
+            "type": "block_actions",
+            "user": {"id": "U123", "name": "chef"},
+            "channel": {"id": "C456", "name": "general"},
+            "actions": [{"action_id": "/coach select abc", "action_ts": "1700000000.000100"}]
+        });
+        let channel_msgs = parse_block_actions(&channel_payload);
+        assert_eq!(channel_msgs.len(), 1);
+        assert!(!channel_msgs[0].is_direct_message);
+    }
 }

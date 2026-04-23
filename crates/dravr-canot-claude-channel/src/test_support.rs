@@ -159,6 +159,7 @@ pub fn sample_incoming(
         timestamp: Utc::now(),
         raw_payload: json!({}),
         turn_id: ConversationTurnId::new(),
+        is_direct_message: false,
         metadata: json!({}),
     }
 }

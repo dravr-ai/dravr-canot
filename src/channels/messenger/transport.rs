@@ -94,6 +94,9 @@ impl TransportAdapter for MessengerTransport {
                         timestamp: Utc::now(),
                         raw_payload: event.clone(),
                         turn_id: ConversationTurnId::new(),
+                        // Facebook Messenger Platform only delivers 1:1
+                        // user→page conversations to webhooks.
+                        is_direct_message: true,
                         metadata: Value::Null,
                     });
                     continue;
@@ -119,6 +122,7 @@ impl TransportAdapter for MessengerTransport {
                         timestamp: Utc::now(),
                         raw_payload: event.clone(),
                         turn_id: ConversationTurnId::new(),
+                        is_direct_message: true,
                         metadata: Value::Null,
                     });
                 }

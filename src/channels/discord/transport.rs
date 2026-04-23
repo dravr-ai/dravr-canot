@@ -181,6 +181,12 @@ impl TransportAdapter for DiscordTransport {
 
         let interaction_id = payload.get("id").and_then(Value::as_str).unwrap_or("0");
 
+        // Discord interaction payloads omit guild_id for DM channels (bot
+        // user-installed apps / user-app DMs). Guild-scoped interactions
+        // always include guild_id, so absence is the canonical DM signal.
+        // See https://discord.com/developers/docs/interactions/receiving-and-responding#interaction-object.
+        let is_direct_message = payload.get("guild_id").is_none_or(Value::is_null);
+
         let incoming = IncomingMessage {
             channel_type: ChannelType::Discord,
             sender_id: user_id.to_owned(),
@@ -193,6 +199,7 @@ impl TransportAdapter for DiscordTransport {
             timestamp: Utc::now(),
             raw_payload: payload,
             turn_id: ConversationTurnId::new(),
+            is_direct_message,
             metadata: Value::Null,
         };
 

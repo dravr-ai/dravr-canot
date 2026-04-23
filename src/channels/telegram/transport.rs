@@ -104,6 +104,11 @@ impl TransportAdapter for TelegramTransport {
                 reason: "missing chat.id".to_owned(),
             })?;
 
+        // Telegram chat.type is one of "private", "group", "supergroup",
+        // "channel" (Bot API getUpdates spec). Only "private" is a 1:1 DM.
+        let is_direct_message =
+            message.pointer("/chat/type").and_then(Value::as_str) == Some("private");
+
         let from_id = message
             .pointer("/from/id")
             .and_then(Value::as_i64)
@@ -145,6 +150,7 @@ impl TransportAdapter for TelegramTransport {
             timestamp: Utc::now(),
             raw_payload: update,
             turn_id: ConversationTurnId::new(),
+            is_direct_message,
             metadata,
         };
 
@@ -250,6 +256,13 @@ fn parse_callback_query(callback: &Value, update: &Value) -> Vec<IncomingMessage
         .and_then(Value::as_i64)
         .unwrap_or(from_id);
 
+    // Mirror the message-path rule: callback_query messages carry the same
+    // chat.type shape inside /message/chat/type.
+    let is_direct_message = callback
+        .pointer("/message/chat/type")
+        .and_then(Value::as_str)
+        == Some("private");
+
     let callback_data = callback.get("data").and_then(Value::as_str).unwrap_or("");
     let callback_id = callback.get("id").and_then(Value::as_str).unwrap_or("0");
 
@@ -274,6 +287,7 @@ fn parse_callback_query(callback: &Value, update: &Value) -> Vec<IncomingMessage
         timestamp: Utc::now(),
         raw_payload: update.clone(),
         turn_id: ConversationTurnId::new(),
+        is_direct_message,
         metadata,
     };
 
