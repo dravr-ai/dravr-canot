@@ -38,11 +38,21 @@ pub struct SlackChannel {
 }
 
 impl SlackChannel {
-    /// Create a new Slack channel adapter
+    /// Create a new Slack channel adapter that drops every bot-authored message.
     #[must_use]
     pub fn new(signing_secret: String) -> Self {
+        Self::with_allowed_bot_ids(signing_secret, Vec::new())
+    }
+
+    /// Create a Slack channel adapter that allow-lists the given bot IDs.
+    ///
+    /// See [`SlackTransport::with_allowed_bot_ids`] for the security caveats —
+    /// allow-listed bots bypass the loop-prevention filter and are treated as
+    /// real user input.
+    #[must_use]
+    pub fn with_allowed_bot_ids(signing_secret: String, allowed_bot_ids: Vec<String>) -> Self {
         Self {
-            transport: SlackTransport::new(signing_secret),
+            transport: SlackTransport::with_allowed_bot_ids(signing_secret, allowed_bot_ids),
             renderer: SlackRenderer,
         }
     }

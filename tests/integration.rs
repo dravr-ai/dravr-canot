@@ -239,6 +239,29 @@ fn factory_creates_slack_adapter() {
     assert_eq!(adapter.channel_type(), ChannelType::Slack);
 }
 
+#[cfg(feature = "channel-slack")]
+#[test]
+fn factory_slack_accepts_optional_allowed_bot_ids() {
+    use dravr_canot::factory::create_adapter_from_config;
+    // Field absent — back-compat path for configs written before v0.4.9.
+    let config = serde_json::json!({ "webhook_secret": "test-secret" });
+    assert!(create_adapter_from_config(ChannelType::Slack, &config).is_ok());
+
+    // Field present as array of strings.
+    let config = serde_json::json!({
+        "webhook_secret": "test-secret",
+        "allowed_bot_ids": ["B_QA_DRIVER", "B_ZAPIER"],
+    });
+    assert!(create_adapter_from_config(ChannelType::Slack, &config).is_ok());
+
+    // Field present but wrong type — factory is tolerant (falls back to empty).
+    let config = serde_json::json!({
+        "webhook_secret": "test-secret",
+        "allowed_bot_ids": "not-an-array",
+    });
+    assert!(create_adapter_from_config(ChannelType::Slack, &config).is_ok());
+}
+
 // ============================================================================
 // Error retryability
 // ============================================================================

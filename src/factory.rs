@@ -40,7 +40,11 @@ pub fn create_adapter_from_config(
         #[cfg(feature = "channel-slack")]
         ChannelType::Slack => {
             let secret = extract_string(config, "webhook_secret", "slack")?;
-            Ok(Arc::new(SlackChannel::new(secret)))
+            let allowed_bot_ids = extract_string_array(config, "allowed_bot_ids");
+            Ok(Arc::new(SlackChannel::with_allowed_bot_ids(
+                secret,
+                allowed_bot_ids,
+            )))
         }
         #[cfg(feature = "channel-telegram")]
         ChannelType::Telegram => {
@@ -80,4 +84,21 @@ fn extract_string(config: &Value, field: &str, channel: &str) -> MessagingResult
         .ok_or_else(|| MessagingError::ChannelNotConfigured {
             channel: format!("{channel}: missing {field}"),
         })
+}
+
+/// Extract an optional array-of-strings field from a JSON config object.
+///
+/// Returns an empty `Vec` when the field is absent, non-array, or contains no
+/// string entries — this keeps the factory tolerant of config rows written
+/// before the field existed.
+fn extract_string_array(config: &Value, field: &str) -> Vec<String> {
+    config
+        .get(field)
+        .and_then(Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default()
 }

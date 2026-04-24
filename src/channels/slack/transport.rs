@@ -34,15 +34,42 @@ pub struct SlackTransport {
     client: &'static reqwest::Client,
     /// Slack signing secret for webhook verification
     signing_secret: String,
+    /// Slack bot IDs whose messages should be treated as real user input.
+    ///
+    /// By default every message carrying a `bot_id` field is dropped in
+    /// `parse_inbound` to prevent response loops. Allow-listing a bot ID lets
+    /// its messages flow through the pipeline — used by QA drivers and trusted
+    /// third-party integrations (e.g. a Zapier bot posting on a user's behalf).
+    /// The workspace's own Pierre bot ID MUST NOT appear here.
+    allowed_bot_ids: Vec<String>,
 }
 
 impl SlackTransport {
-    /// Create a transport with the given Slack signing secret
+    /// Create a transport with the given Slack signing secret.
+    ///
+    /// All messages carrying a `bot_id` field are dropped — bots cannot post
+    /// to the pipeline. Use [`Self::with_allowed_bot_ids`] to allow-list
+    /// specific bot IDs.
     #[must_use]
     pub fn new(signing_secret: String) -> Self {
+        Self::with_allowed_bot_ids(signing_secret, Vec::new())
+    }
+
+    /// Create a transport that allow-lists the given Slack bot IDs.
+    ///
+    /// Messages with a `bot_id` matching one of these values parse into an
+    /// `IncomingMessage` like a human user's message. All other bot-authored
+    /// messages are still dropped.
+    ///
+    /// Allow-listed bots are treated as real user input. Only list trusted
+    /// QA drivers or integration bots, and never include the workspace's own
+    /// Pierre bot ID — that would create a feedback loop.
+    #[must_use]
+    pub fn with_allowed_bot_ids(signing_secret: String, allowed_bot_ids: Vec<String>) -> Self {
         Self {
             client: api_client(),
             signing_secret,
+            allowed_bot_ids,
         }
     }
 }
@@ -137,9 +164,13 @@ impl TransportAdapter for SlackTransport {
             return Ok(vec![]);
         }
 
-        // Skip bot messages to avoid loops
-        if event.get("bot_id").is_some() {
-            return Ok(vec![]);
+        // Skip bot messages to avoid loops. Allow-listed bot IDs (e.g. QA
+        // drivers, trusted third-party integrations) are treated as real
+        // user input.
+        if let Some(bot_id) = event.get("bot_id").and_then(Value::as_str) {
+            if !self.allowed_bot_ids.iter().any(|allowed| allowed == bot_id) {
+                return Ok(vec![]);
+            }
         }
 
         let user_id = event
