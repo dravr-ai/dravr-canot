@@ -1,13 +1,5 @@
 # Changelog
 
-## [0.4.9] — 2026-04-23
-
-### Added
-
-- feat(slack): per-channel `allowed_bot_ids` to opt bot messages past the loop-prevention filter. `SlackTransport`/`SlackChannel` gain `with_allowed_bot_ids` constructors; `create_adapter_from_config` reads an optional `allowed_bot_ids: ["B..."]` array from the JSON config. Bot messages are still dropped by default; only IDs in the list parse through as `IncomingMessage`. Allow-listed bots are treated as real user input — only list trusted QA drivers and integration bots, and never the workspace's own Pierre bot ID. Configs written before v0.4.9 retain identical behavior (empty list).
-
-
-
 ## [0.4.8] — 2026-04-23
 
 
