@@ -37,9 +37,10 @@ use std::sync::Arc;
 use crate::models::ChannelType;
 use crate::turn::ConversationTurnId;
 
-/// Direction of the observed message — inbound from the user, or
-/// outbound from the platform back to the user. Mirrors the natural
-/// vocabulary of [`crate::models::IncomingMessage`] vs
+/// Direction of the observed message — inbound or outbound.
+///
+/// Mirrors the natural vocabulary of
+/// [`crate::models::IncomingMessage`] vs
 /// [`crate::models::OutgoingMessage`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MessageDirection {
@@ -60,9 +61,11 @@ impl MessageDirection {
     }
 }
 
-/// Observer trait the dispatch + transport paths call once per
-/// successfully processed message. The trait is `Send + Sync` so a
-/// single instance can be shared across the whole runtime via
+/// Observer trait called once per successfully processed message.
+///
+/// The dispatch + transport paths invoke `observe` for each inbound
+/// or outbound message. The trait is `Send + Sync` so a single
+/// instance can be shared across the whole runtime via
 /// [`Arc<dyn MessageCounter>`].
 ///
 /// Implementors **must not** propagate errors out of `observe` —
