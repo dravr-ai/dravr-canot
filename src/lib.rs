@@ -67,6 +67,14 @@ pub mod retry;
 /// Observability helpers for structured tracing spans and metrics
 pub mod observability;
 
+/// `MessageCounter` observer trait + `NoopMessageCounter` default.
+///
+/// Hosts inject a concrete `Arc<dyn MessageCounter>` to forward
+/// inbound/outbound message events to their analytics backend
+/// (PostHog, Datadog, etc.) without coupling the dispatch path to
+/// any specific telemetry vendor.
+pub mod counter;
+
 /// Slash command infrastructure for markdown-defined messaging commands
 pub mod commands;
 
@@ -95,6 +103,7 @@ pub mod agui_status;
 // Re-export primary types for consumers
 pub use channel::MessagingChannel;
 pub use config_store::ChannelConfigStore;
+pub use counter::{MessageCounter, MessageDirection, NoopMessageCounter, SharedMessageCounter};
 pub use descriptor::ChannelDescriptor;
 pub use env_config_store::EnvConfigStore;
 pub use registry::ChannelRegistry;
