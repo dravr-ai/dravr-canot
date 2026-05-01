@@ -14,6 +14,8 @@ use http::HeaderMap;
 use serde_json::Value;
 use uuid::Uuid;
 
+use tracing::{info, trace};
+
 use crate::http_client::api_client;
 
 use crate::meta_signature::verify_meta_signature;
@@ -53,6 +55,17 @@ impl TransportAdapter for MessengerTransport {
         _headers: &HeaderMap,
         body: &[u8],
     ) -> MessagingResult<Vec<IncomingMessage>> {
+        // Operator-facing summary at info; full body at trace so an operator
+        // following a typed message through the stack can see exactly what
+        // Meta delivered to the webhook.
+        info!(body_len = body.len(), "messenger parse_inbound received");
+        if tracing::enabled!(tracing::Level::TRACE) {
+            trace!(
+                body = %String::from_utf8_lossy(body),
+                "messenger inbound body"
+            );
+        }
+
         let payload: Value =
             serde_json::from_slice(body).map_err(|e| MessagingError::InvalidPayload {
                 channel: "messenger".to_owned(),
@@ -128,6 +141,11 @@ impl TransportAdapter for MessengerTransport {
                 }
             }
         }
+
+        info!(
+            message_count = messages.len(),
+            "messenger inbound messages parsed"
+        );
 
         Ok(messages)
     }

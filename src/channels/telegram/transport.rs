@@ -12,7 +12,7 @@ use async_trait::async_trait;
 use chrono::Utc;
 use http::HeaderMap;
 use serde_json::Value;
-use tracing::{debug, warn};
+use tracing::{debug, info, trace, warn};
 use uuid::Uuid;
 
 use crate::http_client::api_client;
@@ -73,6 +73,18 @@ impl TransportAdapter for TelegramTransport {
         _headers: &HeaderMap,
         body: &[u8],
     ) -> MessagingResult<Vec<IncomingMessage>> {
+        // Webhook payload arrives as raw JSON. Operator-facing summary at
+        // info; full body at trace so an operator following a typed message
+        // through the stack can see exactly what Telegram delivered without
+        // inspecting their reverse proxy.
+        info!(body_len = body.len(), "telegram parse_inbound received");
+        if tracing::enabled!(tracing::Level::TRACE) {
+            trace!(
+                body = %String::from_utf8_lossy(body),
+                "telegram inbound body"
+            );
+        }
+
         let update: Value =
             serde_json::from_slice(body).map_err(|e| MessagingError::InvalidPayload {
                 channel: "telegram".to_owned(),
@@ -153,6 +165,18 @@ impl TransportAdapter for TelegramTransport {
             is_direct_message,
             metadata,
         };
+
+        info!(
+            turn_id = %incoming.turn_id,
+            chat_id,
+            message_id,
+            is_direct_message,
+            content_kind = match &incoming.content {
+                MessageContent::Text { .. } => "text",
+                _ => "non_text",
+            },
+            "telegram inbound message parsed"
+        );
 
         Ok(vec![incoming])
     }
