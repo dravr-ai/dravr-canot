@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.12] — 2026-05-01
+
+### Other
+
+- obs: structured ingress logging in canot transports Info-level body_len + parse summary, trace-level full webhook body in Telegram + Messenger parse_inbound; Telegram emits turn_id at parse.
+
+
+
 ## [0.4.11] — 2026-04-28
 
 

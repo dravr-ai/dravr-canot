@@ -6,7 +6,7 @@
 
 [package]
 name = "dravr-canot-mcp"
-version = "0.4.11"
+version = "0.4.12"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "MCP server for dravr-canot — expose messaging channels via Model Context Protocol"
@@ -33,7 +33,7 @@ channel-telegram = ["dravr-canot/channel-telegram"]
 all-channels = ["channel-whatsapp", "channel-messenger", "channel-discord", "channel-slack", "channel-telegram"]
 
 [dependencies]
-dravr-canot = { path = "../..", version = "0.4.11" }
+dravr-canot = { path = "../..", version = "0.4.12" }
 dravr-tronc = "0.2"
 async-trait = "0.1"
 clap = { version = "4", features = ["derive"] }
