@@ -121,10 +121,10 @@ ed25519-dalek = { version = "2.2", optional = true }
 # Discord Gateway WebSocket client
 tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"], optional = true }
 futures-util = { version = "0.3", optional = true }
-tokio = { version = "1.45", features = ["rt", "time", "sync", "macros"], optional = true }
+tokio = { version = "1.52", features = ["rt", "time", "sync", "macros"], optional = true }
 
 [dev-dependencies]
-tokio = { version = "1.45", features = ["full", "test-util"] }
+tokio = { version = "1.52", features = ["full", "test-util"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # AG-UI cross-layer E2E tests run a mock SSE server and a mock Telegram
 # Bot API in-process via axum. Only used under --features agui.
