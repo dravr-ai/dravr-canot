@@ -187,6 +187,13 @@ impl TransportAdapter for DiscordTransport {
         // See https://discord.com/developers/docs/interactions/receiving-and-responding#interaction-object.
         let is_direct_message = payload.get("guild_id").is_none_or(Value::is_null);
 
+        // Discord Interactions API embeds the channel object on the
+        // interaction payload (since v10). DM channels have no `name`.
+        let chat_title = payload
+            .pointer("/channel/name")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+
         let incoming = IncomingMessage {
             channel_type: ChannelType::Discord,
             sender_id: user_id.to_owned(),
@@ -195,6 +202,7 @@ impl TransportAdapter for DiscordTransport {
                 body: content_text.to_owned(),
             },
             conversation_id: Some(channel_id.to_owned()),
+            chat_title,
             channel_message_id: interaction_id.to_owned(),
             timestamp: Utc::now(),
             raw_payload: payload,

@@ -155,6 +155,7 @@ pub fn sample_incoming(
             body: text.to_owned(),
         },
         conversation_id: conversation_id.map(str::to_owned),
+        chat_title: None,
         channel_message_id: "mock-message-id".to_owned(),
         timestamp: Utc::now(),
         raw_payload: json!({}),

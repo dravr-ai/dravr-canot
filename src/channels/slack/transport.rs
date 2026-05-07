@@ -193,6 +193,10 @@ impl TransportAdapter for SlackTransport {
             sender_name: None,
             content: MessageContent::Text { body: text },
             conversation_id: Some(channel_id.to_owned()),
+            // Slack Events API delivers only the channel ID; resolving the
+            // channel name requires a separate conversations.info call. Hosts
+            // that need the title can look it up downstream. None for now.
+            chat_title: None,
             channel_message_id: ts.to_owned(),
             timestamp: Utc::now(),
             raw_payload: payload,
@@ -353,6 +357,7 @@ fn parse_block_actions(payload: &Value) -> Vec<IncomingMessage> {
                     body: action_id.to_owned(),
                 },
                 conversation_id: Some(channel_id.to_owned()),
+                chat_title: None,
                 channel_message_id: action_ts.to_owned(),
                 timestamp: Utc::now(),
                 raw_payload: payload.clone(),

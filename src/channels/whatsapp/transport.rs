@@ -101,6 +101,9 @@ impl TransportAdapter for WhatsAppTransport {
                         sender_name,
                         content,
                         conversation_id: None,
+                        // WhatsApp Cloud API delivers only 1:1 messages — no
+                        // group chats, so no title to surface.
+                        chat_title: None,
                         channel_message_id: channel_message_id.to_owned(),
                         timestamp: Utc::now(),
                         raw_payload: msg.clone(),

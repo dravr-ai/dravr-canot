@@ -121,6 +121,14 @@ impl TransportAdapter for TelegramTransport {
         let is_direct_message =
             message.pointer("/chat/type").and_then(Value::as_str) == Some("private");
 
+        // Telegram exposes chat.title for group / supergroup / channel
+        // (Bot API). Private chats carry first_name/last_name instead and
+        // produce None here.
+        let chat_title = message
+            .pointer("/chat/title")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+
         let from_id = message
             .pointer("/from/id")
             .and_then(Value::as_i64)
@@ -158,6 +166,7 @@ impl TransportAdapter for TelegramTransport {
             sender_name: from_name,
             content,
             conversation_id: Some(chat_id.to_string()),
+            chat_title,
             channel_message_id: message_id.to_string(),
             timestamp: Utc::now(),
             raw_payload: update,
@@ -287,6 +296,11 @@ fn parse_callback_query(callback: &Value, update: &Value) -> Vec<IncomingMessage
         .and_then(Value::as_str)
         == Some("private");
 
+    let chat_title = callback
+        .pointer("/message/chat/title")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+
     let callback_data = callback.get("data").and_then(Value::as_str).unwrap_or("");
     let callback_id = callback.get("id").and_then(Value::as_str).unwrap_or("0");
 
@@ -307,6 +321,7 @@ fn parse_callback_query(callback: &Value, update: &Value) -> Vec<IncomingMessage
             body: callback_data.to_owned(),
         },
         conversation_id: Some(chat_id.to_string()),
+        chat_title,
         channel_message_id: callback_id.to_owned(),
         timestamp: Utc::now(),
         raw_payload: update.clone(),

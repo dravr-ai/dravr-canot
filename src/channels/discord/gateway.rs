@@ -442,6 +442,11 @@ fn parse_message_create(data: &Value, bot_user_id: Option<&str>) -> Option<Incom
             body: content.to_owned(),
         },
         conversation_id: Some(channel_id.to_owned()),
+        // Discord MESSAGE_CREATE gateway payloads carry only channel_id;
+        // resolving the channel name requires a guild-cache lookup or the
+        // GET /channels/{id} REST call. Hosts that need the title can do
+        // that downstream. None for now.
+        chat_title: None,
         channel_message_id: message_id.to_owned(),
         timestamp: Utc::now(),
         raw_payload: data.clone(),

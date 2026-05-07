@@ -103,6 +103,9 @@ impl TransportAdapter for MessengerTransport {
                         sender_name: None,
                         content,
                         conversation_id: Some(sender_id.to_owned()),
+                        // Messenger Platform only delivers 1:1 page↔user
+                        // conversations to webhooks — no group title.
+                        chat_title: None,
                         channel_message_id: mid.to_owned(),
                         timestamp: Utc::now(),
                         raw_payload: event.clone(),
@@ -131,6 +134,9 @@ impl TransportAdapter for MessengerTransport {
                             body: payload_text.to_owned(),
                         },
                         conversation_id: Some(sender_id.to_owned()),
+                        // Messenger Platform only delivers 1:1 page↔user
+                        // conversations to webhooks — no group title.
+                        chat_title: None,
                         channel_message_id: mid.to_owned(),
                         timestamp: Utc::now(),
                         raw_payload: event.clone(),

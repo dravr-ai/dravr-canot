@@ -196,6 +196,16 @@ pub struct IncomingMessage {
     pub content: MessageContent,
     /// Platform-specific conversation/thread identifier
     pub conversation_id: Option<String>,
+    /// Human-readable chat / channel / group title (if available from the
+    /// platform). Populated only for non-DM contexts where the platform
+    /// exposes a name (Telegram `chat.title`, Slack channel name, Discord
+    /// channel name, `WhatsApp` group subject). `None` for DMs or when the
+    /// transport cannot resolve a title without an extra API call. Hosts
+    /// use this to label the auto-bound `coaching_groups` row instead of
+    /// falling back to the synthetic `{channel} group {chat_id}` form.
+    /// Serde defaults to `None` so older payloads stay deserializable.
+    #[serde(default)]
+    pub chat_title: Option<String>,
     /// Platform-specific message identifier
     pub channel_message_id: String,
     /// Timestamp when the message was received
