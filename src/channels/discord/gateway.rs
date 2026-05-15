@@ -4,7 +4,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright (c) 2026 dravr.ai
 
-use std::error::Error as StdError;
 use std::time::Duration;
 
 use chrono::Utc;
@@ -14,6 +13,7 @@ use serde_json::{json, Value};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::time::{interval, sleep, timeout, Interval};
+use tokio_tungstenite::tungstenite::error::ProtocolError as WsProtocolError;
 use tokio_tungstenite::tungstenite::Error as TungsteniteError;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
 use tokio_tungstenite::{connect_async, MaybeTlsStream};
@@ -46,6 +46,40 @@ const RECONNECT_BASE_DELAY: Duration = Duration::from_secs(1);
 
 /// Maximum delay between reconnect attempts
 const RECONNECT_MAX_DELAY: Duration = Duration::from_mins(1);
+
+/// Classify a `TungsteniteError` as transient (routine reconnect) vs anomalous.
+///
+/// Discord cycles gateway sessions routinely, and the underlying network
+/// will drop the WebSocket without a polite Close frame. The reconnect
+/// loop in [`start_gateway`] already logs every disconnect at WARN with
+/// attempt count and backoff delay, which is the operator-visible signal.
+/// Treating every routine drop as ERROR forwards it through the
+/// `dravr-tronc` error notifier to Slack and drowns real failures in
+/// reconnect noise.
+///
+/// Returns `true` when the error represents a normal session lifecycle
+/// event (peer reset, OS-level socket drop, orderly close) that the
+/// reconnect loop will handle on its own. Returns `false` for protocol
+/// violations, TLS faults, capacity exhaustion, and other anomalies that
+/// merit a real ERROR-level page.
+fn is_transient_ws_error(err: &TungsteniteError) -> bool {
+    // Match the lifecycle-noise variants. Everything else (TLS faults,
+    // protocol violations, capacity exhaustion, URL/HTTP errors,
+    // write-buffer-full, attack-attempt, UTF-8 decode) is a real
+    // anomaly that should page through the ERROR path.
+    matches!(
+        err,
+        // Orderly WS close — the reconnect loop will re-establish.
+        TungsteniteError::ConnectionClosed
+        | TungsteniteError::AlreadyClosed
+        // OS-level socket reset / timeout / EOF. Reconnect loop handles.
+        | TungsteniteError::Io(_)
+        // Peer dropped the TCP without sending a Close frame. Discord
+        // does this routinely when cycling gateway shards, and Cloudflare
+        // does it on idle timeout. Not actionable on its own.
+        | TungsteniteError::Protocol(WsProtocolError::ResetWithoutClosingHandshake)
+    )
+}
 
 /// Configuration for the Discord Gateway client
 #[derive(Clone)]
@@ -146,7 +180,16 @@ async fn run_gateway_session(
     let (ws_stream, _) = match connect_async(GATEWAY_URL).await {
         Ok(conn) => conn,
         Err(e) => {
-            error!(error = %e, "Discord Gateway: WebSocket connection failed");
+            // Transient connect failures (DNS blip, TLS hiccup, idle reset)
+            // are handled by the reconnect loop's backoff in
+            // [`start_gateway`]; only true anomalies stay at ERROR. The
+            // outer loop logs an ERROR once `MAX_RECONNECT_ATTEMPTS` is
+            // exhausted, which is the real "give up" page.
+            if is_transient_ws_error(&e) {
+                warn!(error = %e, "Discord Gateway: connect failed, will retry");
+            } else {
+                error!(error = %e, "Discord Gateway: WebSocket connection failed");
+            }
             return not_ready(DisconnectReason::ConnectionLost);
         }
     };
@@ -267,17 +310,14 @@ where
 /// Handle a single incoming WebSocket message
 ///
 /// Returns `None` to continue the event loop, `Some(reason)` to disconnect.
-async fn handle_incoming_message<S>(
-    msg: Option<Result<WsMessage, S>>,
+async fn handle_incoming_message(
+    msg: Option<Result<WsMessage, TungsteniteError>>,
     write: &mut SplitSink<tokio_tungstenite::WebSocketStream<MaybeTlsStream<TcpStream>>, WsMessage>,
     last_sequence: &mut Option<u64>,
     heartbeat_ack_pending: &mut bool,
     config: &mut GatewayConfig,
     tx: &mpsc::Sender<IncomingMessage>,
-) -> Option<DisconnectReason>
-where
-    S: StdError,
-{
+) -> Option<DisconnectReason> {
     match msg {
         Some(Ok(WsMessage::Text(text))) => {
             let payload: Value = match serde_json::from_str(&text) {
@@ -366,7 +406,16 @@ where
             Some(DisconnectReason::ConnectionLost)
         }
         Some(Err(e)) => {
-            error!(error = %e, "Discord Gateway: WebSocket error");
+            // Routine WS lifecycle drops (peer reset, OS socket close,
+            // orderly close) are noise — the reconnect loop already
+            // surfaces them at WARN with attempt count. Only anomalous
+            // tungstenite errors (protocol violations, TLS faults,
+            // capacity exhaustion) escalate to ERROR.
+            if is_transient_ws_error(&e) {
+                warn!(error = %e, "Discord Gateway: WebSocket dropped, will reconnect");
+            } else {
+                error!(error = %e, "Discord Gateway: WebSocket error");
+            }
             Some(DisconnectReason::ConnectionLost)
         }
         None => {
@@ -579,5 +628,47 @@ mod tests {
     fn backoff_delay_caps_at_max() {
         let d = calculate_backoff_delay(20);
         assert_eq!(d, RECONNECT_MAX_DELAY);
+    }
+
+    #[test]
+    fn is_transient_ws_error_treats_io_reset_as_transient() {
+        // "Connection reset by peer (os error 104)" is the most common
+        // production noise pattern from the Discord gateway. The
+        // reconnect loop handles it, so it must classify as transient.
+        use std::io::{Error as IoError, ErrorKind as IoKind};
+        let io = IoError::new(IoKind::ConnectionReset, "reset by peer");
+        let err = TungsteniteError::Io(io);
+        assert!(is_transient_ws_error(&err));
+    }
+
+    #[test]
+    fn is_transient_ws_error_treats_reset_without_close_handshake_as_transient() {
+        // Discord drops sessions without sending a polite Close frame
+        // when cycling gateway shards. Classify as routine reconnect.
+        let err = TungsteniteError::Protocol(WsProtocolError::ResetWithoutClosingHandshake);
+        assert!(is_transient_ws_error(&err));
+    }
+
+    #[test]
+    fn is_transient_ws_error_treats_orderly_close_as_transient() {
+        assert!(is_transient_ws_error(&TungsteniteError::ConnectionClosed));
+        assert!(is_transient_ws_error(&TungsteniteError::AlreadyClosed));
+    }
+
+    #[test]
+    fn is_transient_ws_error_escalates_real_protocol_violations() {
+        // Genuine protocol bugs deserve ERROR-level paging — they imply
+        // a server-side change or a client encoder fault.
+        let err = TungsteniteError::Protocol(WsProtocolError::HandshakeIncomplete);
+        assert!(!is_transient_ws_error(&err));
+    }
+
+    #[test]
+    fn is_transient_ws_error_escalates_non_transient_kinds() {
+        // Sanity check that not every variant collapses to transient.
+        // Utf8 stands in here for the "real anomaly" bucket — it isn't
+        // recoverable by reconnecting alone.
+        let err = TungsteniteError::Utf8;
+        assert!(!is_transient_ws_error(&err));
     }
 }
