@@ -6,6 +6,7 @@
 
 use crate::error::MessagingResult;
 use crate::models::{MessageContent, OutgoingMessage};
+use crate::rich_text;
 use serde_json::{json, Value};
 use std::fmt::Write;
 
@@ -30,6 +31,15 @@ impl ResponseRenderer for WhatsAppRenderer {
                 "type": "text",
                 "text": { "body": body }
             })),
+            MessageContent::RichText { body } => {
+                let rendered = rich_text::render_whatsapp_text(&rich_text::parse(body));
+                Ok(json!({
+                    "messaging_product": "whatsapp",
+                    "to": to,
+                    "type": "text",
+                    "text": { "body": rendered }
+                }))
+            }
             MessageContent::Media {
                 url,
                 mime_type,

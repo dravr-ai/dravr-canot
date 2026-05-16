@@ -141,6 +141,16 @@ pub enum MessageContent {
         /// Message body text
         body: String,
     },
+    /// Rich text using a constrained HTML subset (`<b>`, `<i>`, `<code>`).
+    ///
+    /// Each channel renderer translates the markup into its native
+    /// formatting (Telegram HTML, Slack mrkdwn, `WhatsApp` text formatting,
+    /// Discord markdown, Messenger plaintext). Malformed input is
+    /// preserved as literal text — see [`crate::rich_text`].
+    RichText {
+        /// Body text containing the HTML subset
+        body: String,
+    },
     /// Media attachment (image, video, audio, document)
     Media {
         /// Media URL or file identifier

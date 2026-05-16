@@ -78,6 +78,9 @@ pub mod counter;
 /// Slash command infrastructure for markdown-defined messaging commands
 pub mod commands;
 
+/// Rich text formatting (HTML subset) translated per-channel into native markup
+pub mod rich_text;
+
 /// Shared Meta Platform (Messenger + Whatsapp) HMAC-SHA256 signature verification
 pub mod meta_signature;
 

@@ -115,10 +115,16 @@ pub struct CommandResponse {
     pub card_title: Option<String>,
     /// Optional action buttons for card responses
     pub actions: Vec<CommandAction>,
+    /// When `true`, `text` contains the rich-text HTML subset
+    /// (`<b>`, `<i>`, `<code>`) and the host bridge should route this
+    /// response through `MessageContent::RichText` so each channel
+    /// renderer translates it into native markup. When `false`,
+    /// `text` is plain.
+    pub is_rich_text: bool,
 }
 
 impl CommandResponse {
-    /// Create a simple text response
+    /// Create a simple plain-text response
     #[must_use]
     pub fn text(text: impl Into<String>) -> Self {
         Self {
@@ -126,6 +132,24 @@ impl CommandResponse {
             require_confirmation: false,
             card_title: None,
             actions: Vec::new(),
+            is_rich_text: false,
+        }
+    }
+
+    /// Create a rich-text response using the HTML subset (`<b>`, `<i>`, `<code>`).
+    ///
+    /// The host bridge maps this onto `MessageContent::RichText`, which
+    /// each channel renderer translates into native markup (Telegram
+    /// HTML, Slack mrkdwn, `WhatsApp` text formatting, Discord markdown,
+    /// Messenger plaintext). Malformed tags survive as literal text.
+    #[must_use]
+    pub fn rich_text(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            require_confirmation: false,
+            card_title: None,
+            actions: Vec::new(),
+            is_rich_text: true,
         }
     }
 
@@ -137,6 +161,7 @@ impl CommandResponse {
             require_confirmation: true,
             card_title: None,
             actions: Vec::new(),
+            is_rich_text: false,
         }
     }
 
@@ -152,6 +177,7 @@ impl CommandResponse {
             require_confirmation: false,
             card_title: Some(title.into()),
             actions,
+            is_rich_text: false,
         }
     }
 

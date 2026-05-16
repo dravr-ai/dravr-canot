@@ -6,6 +6,7 @@
 
 use crate::error::MessagingResult;
 use crate::models::{MessageContent, OutgoingMessage};
+use crate::rich_text;
 use html_escape::encode_text;
 use serde_json::{json, Value};
 
@@ -24,6 +25,11 @@ impl ResponseRenderer for TelegramRenderer {
             MessageContent::Text { body } => json!({
                 "chat_id": chat_id,
                 "text": encode_text(body).as_ref(),
+                "parse_mode": "HTML"
+            }),
+            MessageContent::RichText { body } => json!({
+                "chat_id": chat_id,
+                "text": rich_text::render_telegram_html(&rich_text::parse(body)),
                 "parse_mode": "HTML"
             }),
             MessageContent::Media { url, caption, .. } => json!({

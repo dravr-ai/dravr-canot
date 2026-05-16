@@ -6,6 +6,7 @@
 
 use crate::error::MessagingResult;
 use crate::models::{MessageContent, OutgoingMessage};
+use crate::rich_text;
 use serde_json::{json, Value};
 
 use crate::renderer::ResponseRenderer;
@@ -27,6 +28,13 @@ impl ResponseRenderer for MessengerRenderer {
                 "recipient": recipient,
                 "message": { "text": body }
             })),
+            MessageContent::RichText { body } => {
+                let rendered = rich_text::render_plain(&rich_text::parse(body));
+                Ok(json!({
+                    "recipient": recipient,
+                    "message": { "text": rendered }
+                }))
+            }
             MessageContent::Media { url, mime_type, .. } => {
                 let attachment_type = if mime_type.starts_with("image") {
                     "image"

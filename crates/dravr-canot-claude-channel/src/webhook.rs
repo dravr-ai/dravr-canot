@@ -15,6 +15,7 @@ use tokio::sync::mpsc;
 use tracing::{debug, warn};
 
 use dravr_canot::models::{ChannelType, MessageContent};
+use dravr_canot::rich_text;
 use dravr_canot::ChannelRegistry;
 
 use crate::mcp::ChannelEvent;
@@ -152,6 +153,7 @@ async fn handle_webhook(
 fn extract_text_content(content: &MessageContent) -> String {
     match content {
         MessageContent::Text { body } => body.clone(),
+        MessageContent::RichText { body } => rich_text::render_plain(&rich_text::parse(body)),
         MessageContent::Media { caption, url, .. } => caption
             .as_deref()
             .map_or_else(|| format!("[media: {url}]"), String::from),

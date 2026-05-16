@@ -6,6 +6,7 @@
 
 use crate::error::MessagingResult;
 use crate::models::{MessageContent, OutgoingMessage};
+use crate::rich_text;
 use serde_json::{json, Value};
 
 use crate::renderer::ResponseRenderer;
@@ -33,6 +34,19 @@ impl ResponseRenderer for SlackRenderer {
                     }
                 }]
             }),
+            MessageContent::RichText { body } => {
+                let rendered = rich_text::render_slack_mrkdwn(&rich_text::parse(body));
+                json!({
+                    "channel": channel,
+                    "blocks": [{
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": rendered
+                        }
+                    }]
+                })
+            }
             MessageContent::Media { url, caption, .. } => json!({
                 "channel": channel,
                 "blocks": [{

@@ -6,6 +6,7 @@
 
 use crate::error::MessagingResult;
 use crate::models::{MessageContent, OutgoingMessage};
+use crate::rich_text;
 use serde_json::{json, Value};
 
 use crate::renderer::ResponseRenderer;
@@ -25,6 +26,13 @@ impl ResponseRenderer for DiscordRenderer {
                 "content": body,
                 "channel_id": msg.recipient_id
             })),
+            MessageContent::RichText { body } => {
+                let rendered = rich_text::render_discord_markdown(&rich_text::parse(body));
+                Ok(json!({
+                    "content": rendered,
+                    "channel_id": msg.recipient_id
+                }))
+            }
             MessageContent::Media { url, caption, .. } => Ok(json!({
                 "channel_id": msg.recipient_id,
                 "embeds": [{
