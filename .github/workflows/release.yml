@@ -205,6 +205,7 @@ jobs:
         with:
           name: dravr-canot-${{ matrix.target }}
           path: dravr-canot-v*.*
+          retention-days: 7
 
   docker:
     name: Docker Image
