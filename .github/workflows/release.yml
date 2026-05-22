@@ -142,8 +142,12 @@ jobs:
           git tag "v${VERSION}"
           git push origin main --tags
 
-  build:
-    name: Build (${{ matrix.target }})
+  build-and-release:
+    # Builds the binary AND attaches it directly to the GitHub Release in the same
+    # runner — bypasses workflow-artifact storage (private-repo quota was blocking
+    # uploads as of 2026-05-22). Matrix entries call softprops/action-gh-release
+    # idempotently with the same tag_name; first call creates, others append.
+    name: Build & Release (${{ matrix.target }})
     needs: version
     strategy:
       fail-fast: false
@@ -200,12 +204,16 @@ jobs:
           Copy-Item "target/${TARGET}/release/dravr-canot-server.exe" "$DIR/"
           Compress-Archive -Path "$DIR/*" -DestinationPath "${DIR}.zip"
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - name: Attach binary to GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: dravr-canot-${{ matrix.target }}
-          path: dravr-canot-v*.*
-          retention-days: 7
+          tag_name: v${{ needs.version.outputs.version }}
+          name: v${{ needs.version.outputs.version }}
+          body_path: CHANGELOG.md
+          files: |
+            dravr-canot-v*.tar.gz
+            dravr-canot-v*.zip
+          fail_on_unmatched_files: false
 
   docker:
     name: Docker Image
@@ -234,9 +242,9 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  publish:
-    name: Publish Release
-    needs: [version, build]
+  publish-cargo:
+    name: Publish to crates.io
+    needs: version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -261,24 +269,9 @@ jobs:
 
           cargo publish -p dravr-canot-server || echo "dravr-canot-server already published, continuing..."
 
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          pattern: dravr-canot-*
-          merge-multiple: true
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ needs.version.outputs.version }}
-          name: v${{ needs.version.outputs.version }}
-          body_path: CHANGELOG.md
-          files: artifacts/*
-
   update-homebrew:
     name: Update Homebrew
-    needs: [version, build, publish]
+    needs: [version, build-and-release, publish-cargo]
     if: false  # Disabled while repo is private: no macOS artifacts to checksum. Remove this line to restore.
     runs-on: ubuntu-latest
     permissions:
@@ -290,20 +283,15 @@ jobs:
           repository: dravr-ai/homebrew-tap
           token: ${{ secrets.RELEASE_PAT }}
 
-      - name: Download artifacts for SHA computation
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          pattern: dravr-canot-*
-          merge-multiple: true
-
       - name: Update formula
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
-          SHA_ARM=$(shasum -a 256 artifacts/dravr-canot-v${VERSION}-aarch64-apple-darwin.tar.gz | awk '{print $1}')
-          SHA_X86_MAC=$(shasum -a 256 artifacts/dravr-canot-v${VERSION}-x86_64-apple-darwin.tar.gz | awk '{print $1}')
-          SHA_LINUX=$(shasum -a 256 artifacts/dravr-canot-v${VERSION}-x86_64-unknown-linux-gnu.tar.gz | awk '{print $1}')
+          # Fetch SHAs from the GH Release assets (binaries now live there, not in artifact storage)
+          BASE="https://github.com/dravr-ai/dravr-canot/releases/download/v${VERSION}"
+          SHA_ARM=$(curl -sL "${BASE}/dravr-canot-v${VERSION}-aarch64-apple-darwin.tar.gz" | shasum -a 256 | awk '{print $1}')
+          SHA_X86_MAC=$(curl -sL "${BASE}/dravr-canot-v${VERSION}-x86_64-apple-darwin.tar.gz" | shasum -a 256 | awk '{print $1}')
+          SHA_LINUX=$(curl -sL "${BASE}/dravr-canot-v${VERSION}-x86_64-unknown-linux-gnu.tar.gz" | shasum -a 256 | awk '{print $1}')
 
           cat > Formula/dravr-canot.rb <<FORMULA
           # typed: false
