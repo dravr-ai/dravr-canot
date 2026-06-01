@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.16] — 2026-06-01
+
+### Added
+
+- feat(telegram): add delete_message to MessagingChannel for private slash echoes No-op default; Telegram override calls deleteMessage (needs bot admin rights).
+
+### Other
+
+- ci(release): inline build+release, skip artifact-storage roundtrip Bypasses private-repo artifact quota by attaching binaries directly to GH Release via softprops
+- ci(release): cap upload-artifact retention at 7d
+
+
+
 ## [0.4.15] — 2026-05-16
 
 
