@@ -114,4 +114,15 @@ impl MessagingChannel for TelegramChannel {
     ) -> MessagingResult<DeliveryReceipt> {
         self.transport.send_raw(payload, turn_id, config).await
     }
+
+    async fn delete_message(
+        &self,
+        conversation_id: &str,
+        channel_message_id: &str,
+        config: &ChannelConfig,
+    ) -> MessagingResult<()> {
+        self.transport
+            .delete_message(conversation_id, channel_message_id, config)
+            .await
+    }
 }

@@ -255,6 +255,96 @@ impl TransportAdapter for TelegramTransport {
     }
 }
 
+impl TelegramTransport {
+    /// Delete a message from a chat via the Telegram `deleteMessage` Bot API.
+    ///
+    /// `chat_id` is the room/chat the message lives in and `message_id` is
+    /// the Telegram message id to remove. Telegram requires `message_id` to
+    /// be an integer and only honours the call when the bot is an admin with
+    /// `can_delete_messages` in the chat; otherwise it returns HTTP 400 and
+    /// this surfaces a [`MessagingError::ChannelApiError`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MessagingError::ChannelNotConfigured`] when no bot token is
+    /// present, [`MessagingError::DeliveryFailed`] when `message_id` is not a
+    /// valid integer or the request can't be sent, and
+    /// [`MessagingError::ChannelApiError`] when Telegram rejects the deletion.
+    pub async fn delete_message(
+        &self,
+        chat_id: &str,
+        message_id: &str,
+        config: &ChannelConfig,
+    ) -> MessagingResult<()> {
+        let bot_token =
+            config
+                .bot_token
+                .as_deref()
+                .ok_or_else(|| MessagingError::ChannelNotConfigured {
+                    channel: "telegram".to_owned(),
+                })?;
+
+        // Telegram's deleteMessage requires an integer message_id; the
+        // platform stores it as a string, so parse it back here.
+        let message_id_int: i64 =
+            message_id
+                .parse()
+                .map_err(|e| MessagingError::DeliveryFailed {
+                    channel: "telegram".to_owned(),
+                    reason: format!("invalid message_id '{message_id}': {e}"),
+                    retryable: false,
+                })?;
+
+        // chat_id is "Integer or String" in the Bot API. Numeric ids
+        // (including negative supergroup ids) go as integers; the rare
+        // @username form stays a string.
+        let chat_id_value = chat_id_to_value(chat_id);
+
+        let payload = serde_json::json!({
+            "chat_id": chat_id_value,
+            "message_id": message_id_int,
+        });
+
+        let url = format!("https://api.telegram.org/bot{bot_token}/deleteMessage");
+        let response = self
+            .client
+            .post(&url)
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| MessagingError::DeliveryFailed {
+                channel: "telegram".to_owned(),
+                reason: format!("HTTP request failed: {e}"),
+                retryable: true,
+            })?;
+
+        if response.status().is_success() {
+            debug!(chat_id, message_id, "telegram message deleted");
+            return Ok(());
+        }
+
+        let status = response.status().as_u16();
+        let body_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "unknown".to_owned());
+        Err(MessagingError::ChannelApiError {
+            channel: "telegram".to_owned(),
+            status_code: status,
+            message: body_text,
+        })
+    }
+}
+
+/// Coerce a Telegram chat id string into the Bot API's "Integer or String"
+/// shape: numeric ids (including negative supergroup ids) become a JSON
+/// number, everything else (e.g. an `@channelusername`) stays a string.
+fn chat_id_to_value(chat_id: &str) -> Value {
+    chat_id
+        .parse::<i64>()
+        .map_or_else(|_| Value::from(chat_id), Value::from)
+}
+
 /// Resolve the Telegram Bot API method from the rendered payload shape
 ///
 /// The renderer produces payloads with different keys depending on content type:
@@ -407,5 +497,37 @@ fn parse_non_text_content(message: &Value) -> MessageContent {
     warn!("Telegram message with unsupported content type");
     MessageContent::Text {
         body: "[unsupported message type]".to_owned(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::chat_id_to_value;
+    use serde_json::Value;
+
+    #[test]
+    fn numeric_chat_id_becomes_a_json_number() {
+        // Private/user chats use small positive ids.
+        assert_eq!(chat_id_to_value("99"), Value::from(99_i64));
+    }
+
+    #[test]
+    fn negative_supergroup_id_stays_a_json_number() {
+        // Supergroup chat ids are large negative integers; they must remain
+        // numbers so Telegram routes deleteMessage to the right chat.
+        assert_eq!(
+            chat_id_to_value("-1001234567890"),
+            Value::from(-1_001_234_567_890_i64)
+        );
+    }
+
+    #[test]
+    fn username_chat_id_stays_a_string() {
+        // The @channelusername form can't parse as an integer and is sent
+        // verbatim as a string.
+        assert_eq!(
+            chat_id_to_value("@dravrchannel"),
+            Value::from("@dravrchannel")
+        );
     }
 }

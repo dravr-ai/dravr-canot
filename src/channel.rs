@@ -7,6 +7,7 @@
 use async_trait::async_trait;
 use http::HeaderMap;
 use serde_json::Value;
+use tracing::debug;
 
 use crate::error::MessagingResult;
 use crate::models::{
@@ -85,4 +86,37 @@ pub trait MessagingChannel: Send + Sync {
         turn_id: ConversationTurnId,
         config: &ChannelConfig,
     ) -> MessagingResult<DeliveryReceipt>;
+
+    /// Remove a message from a room/chat on the channel.
+    ///
+    /// The platform calls this to delete a user's slash-command echo from a
+    /// shared room (so the command stays private to the caller while the
+    /// reply is routed to their DM). `conversation_id` is the channel-native
+    /// room/chat id the message lives in; `channel_message_id` is the
+    /// channel-native id of the message to remove.
+    ///
+    /// The default implementation is a no-op: channels whose API cannot
+    /// delete a member's message (WhatsApp/Messenger business APIs) inherit
+    /// it. Telegram overrides it with a real `deleteMessage` call. Deletion
+    /// is best-effort — Telegram refuses unless the bot is an admin with
+    /// `can_delete_messages`, and the caller treats failures as non-fatal.
+    ///
+    /// # Errors
+    ///
+    /// Returns `MessagingError::ChannelApiError` / `DeliveryFailed` when an
+    /// overriding channel's API rejects the deletion.
+    async fn delete_message(
+        &self,
+        conversation_id: &str,
+        channel_message_id: &str,
+        config: &ChannelConfig,
+    ) -> MessagingResult<()> {
+        debug!(
+            channel = ?config.channel_type,
+            conversation_id,
+            channel_message_id,
+            "delete_message not supported for this channel; skipping"
+        );
+        Ok(())
+    }
 }
