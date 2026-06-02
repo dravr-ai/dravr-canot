@@ -116,4 +116,32 @@ impl MessagingChannel for DiscordChannel {
     ) -> MessagingResult<DeliveryReceipt> {
         self.transport.send_raw(payload, turn_id, config).await
     }
+
+    async fn delete_message(
+        &self,
+        conversation_id: &str,
+        channel_message_id: &str,
+        config: &ChannelConfig,
+    ) -> MessagingResult<()> {
+        self.transport
+            .delete_message(conversation_id, channel_message_id, config)
+            .await
+    }
+
+    async fn send_private_reply(
+        &self,
+        msg: &OutgoingMessage,
+        recipient_user_id: &str,
+        config: &ChannelConfig,
+    ) -> MessagingResult<DeliveryReceipt> {
+        // Discord can't post to a user id directly — open the 1:1 DM channel,
+        // then send the reply there so only the caller sees it.
+        let mut dm = msg.clone();
+        dm.recipient_id = self
+            .transport
+            .open_dm_channel(recipient_user_id, config)
+            .await?;
+        dm.thread_id = None;
+        self.send(&dm, config).await
+    }
 }

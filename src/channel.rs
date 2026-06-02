@@ -119,4 +119,35 @@ pub trait MessagingChannel: Send + Sync {
         );
         Ok(())
     }
+
+    /// Deliver a reply privately to a single user instead of to the room the
+    /// triggering message arrived in.
+    ///
+    /// Used so a slash command issued in a shared room is answered only to the
+    /// caller — other members never see the response. `msg` carries the reply
+    /// content (addressed to the room); `recipient_user_id` is the channel-
+    /// native id of the user to deliver to privately.
+    ///
+    /// The default implementation re-addresses the message directly to the
+    /// user so it lands in a 1:1 DM — correct for channels whose recipient id
+    /// *is* the user id (Telegram, `WhatsApp`, Messenger). Slack overrides this
+    /// with an ephemeral in-channel reply (`chat.postEphemeral`); Discord
+    /// overrides it by opening a DM channel first.
+    ///
+    /// # Errors
+    ///
+    /// Returns `MessagingError::DeliveryFailed` / `ChannelApiError` when the
+    /// underlying send fails.
+    async fn send_private_reply(
+        &self,
+        msg: &OutgoingMessage,
+        recipient_user_id: &str,
+        config: &ChannelConfig,
+    ) -> MessagingResult<DeliveryReceipt> {
+        let mut dm = msg.clone();
+        recipient_user_id.clone_into(&mut dm.recipient_id);
+        // A private 1:1 chat has no room thread/topic to route into.
+        dm.thread_id = None;
+        self.send(&dm, config).await
+    }
 }

@@ -282,6 +282,97 @@ impl TransportAdapter for SlackTransport {
 }
 
 impl SlackTransport {
+    /// Send an ephemeral message via `chat.postEphemeral` — visible only to the
+    /// target user in the channel, and never persisted in channel history.
+    ///
+    /// `payload` must already carry `channel`, `user`, and the rendered content.
+    /// Used to answer a slash command privately in a shared channel.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MessagingError::ChannelNotConfigured`] without an API token,
+    /// [`MessagingError::DeliveryFailed`] on transport failure, and
+    /// [`MessagingError::ChannelApiError`] when Slack returns `ok: false`.
+    pub async fn send_ephemeral(
+        &self,
+        payload: &Value,
+        turn_id: ConversationTurnId,
+        config: &ChannelConfig,
+    ) -> MessagingResult<DeliveryReceipt> {
+        let token =
+            config
+                .api_key
+                .as_deref()
+                .ok_or_else(|| MessagingError::ChannelNotConfigured {
+                    channel: "slack".to_owned(),
+                })?;
+
+        let response = self
+            .client
+            .post("https://slack.com/api/chat.postEphemeral")
+            .header("Authorization", format!("Bearer {token}"))
+            .json(payload)
+            .send()
+            .await
+            .map_err(|e| MessagingError::DeliveryFailed {
+                channel: "slack".to_owned(),
+                reason: format!("HTTP request failed: {e}"),
+                retryable: true,
+            })?;
+
+        let status = response.status().as_u16();
+        if !response.status().is_success() {
+            let body_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "unknown".to_owned());
+            return Err(MessagingError::ChannelApiError {
+                channel: "slack".to_owned(),
+                status_code: status,
+                message: body_text,
+            });
+        }
+
+        let result: Value = response
+            .json()
+            .await
+            .map_err(|e| MessagingError::InvalidPayload {
+                channel: "slack".to_owned(),
+                reason: format!("invalid response JSON: {e}"),
+            })?;
+
+        let ok = result.get("ok").and_then(Value::as_bool).unwrap_or(false);
+        if !ok {
+            let error_msg = result
+                .get("error")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown error");
+            warn!(
+                error = error_msg,
+                "Slack chat.postEphemeral returned ok: false"
+            );
+            return Err(MessagingError::ChannelApiError {
+                channel: "slack".to_owned(),
+                status_code: 200,
+                message: error_msg.to_owned(),
+            });
+        }
+
+        // chat.postEphemeral returns message_ts (not the ts field postMessage uses).
+        let channel_message_id = result
+            .get("message_ts")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+
+        Ok(DeliveryReceipt {
+            message_id: Uuid::new_v4().to_string(),
+            channel_message_id,
+            status: DeliveryStatus::Sent,
+            timestamp: Utc::now(),
+            turn_id,
+        })
+    }
+
     /// Parse the Slack request body, handling both JSON and form-encoded interactive payloads
     fn parse_slack_body(body: &[u8]) -> MessagingResult<Value> {
         // Try direct JSON first (Events API)

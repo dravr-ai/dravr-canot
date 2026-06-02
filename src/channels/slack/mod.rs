@@ -124,4 +124,24 @@ impl MessagingChannel for SlackChannel {
     ) -> MessagingResult<DeliveryReceipt> {
         self.transport.send_raw(payload, turn_id, config).await
     }
+
+    async fn send_private_reply(
+        &self,
+        msg: &OutgoingMessage,
+        recipient_user_id: &str,
+        config: &ChannelConfig,
+    ) -> MessagingResult<DeliveryReceipt> {
+        // Slack's private primitive is an ephemeral message: visible only to
+        // `recipient_user_id`, posted into the same channel the command came
+        // from (msg.recipient_id), and never stored in channel history. Render
+        // the normal payload, then add the target user and route it to
+        // chat.postEphemeral.
+        let mut payload = self.render(msg)?;
+        if let Some(obj) = payload.as_object_mut() {
+            obj.insert("user".to_owned(), Value::from(recipient_user_id));
+        }
+        self.transport
+            .send_ephemeral(&payload, msg.turn_id, config)
+            .await
+    }
 }

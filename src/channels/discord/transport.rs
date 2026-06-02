@@ -300,3 +300,130 @@ impl TransportAdapter for DiscordTransport {
         })
     }
 }
+
+impl DiscordTransport {
+    /// Open (or fetch) the 1:1 DM channel with a user and return its channel id.
+    ///
+    /// Discord can't post to a user id directly; a DM channel must be created
+    /// first via `POST /users/@me/channels`. The call is idempotent — Discord
+    /// returns the existing DM channel if one already exists.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MessagingError::ChannelNotConfigured`] without a bot token,
+    /// [`MessagingError::DeliveryFailed`] on transport failure, and
+    /// [`MessagingError::ChannelApiError`] when Discord rejects the request.
+    pub async fn open_dm_channel(
+        &self,
+        recipient_user_id: &str,
+        config: &ChannelConfig,
+    ) -> MessagingResult<String> {
+        let bot_token =
+            config
+                .bot_token
+                .as_deref()
+                .ok_or_else(|| MessagingError::ChannelNotConfigured {
+                    channel: "discord".to_owned(),
+                })?;
+
+        let payload = serde_json::json!({ "recipient_id": recipient_user_id });
+        let response = self
+            .client
+            .post("https://discord.com/api/v10/users/@me/channels")
+            .header("Authorization", format!("Bot {bot_token}"))
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| MessagingError::DeliveryFailed {
+                channel: "discord".to_owned(),
+                reason: format!("open DM HTTP request failed: {e}"),
+                retryable: true,
+            })?;
+
+        let status = response.status().as_u16();
+        if !response.status().is_success() {
+            let body_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "unknown".to_owned());
+            return Err(MessagingError::ChannelApiError {
+                channel: "discord".to_owned(),
+                status_code: status,
+                message: body_text,
+            });
+        }
+
+        let result: Value = response
+            .json()
+            .await
+            .map_err(|e| MessagingError::InvalidPayload {
+                channel: "discord".to_owned(),
+                reason: format!("invalid open-DM response JSON: {e}"),
+            })?;
+
+        result
+            .get("id")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+            .ok_or_else(|| MessagingError::InvalidPayload {
+                channel: "discord".to_owned(),
+                reason: "open-DM response missing channel id".to_owned(),
+            })
+    }
+
+    /// Delete a message from a channel via `DELETE /channels/{id}/messages/{id}`.
+    ///
+    /// Requires the bot to have the `MANAGE_MESSAGES` permission in the channel;
+    /// otherwise Discord returns HTTP 403 and this surfaces a
+    /// [`MessagingError::ChannelApiError`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MessagingError::ChannelNotConfigured`] without a bot token,
+    /// [`MessagingError::DeliveryFailed`] on transport failure, and
+    /// [`MessagingError::ChannelApiError`] when Discord rejects the deletion.
+    pub async fn delete_message(
+        &self,
+        channel_id: &str,
+        message_id: &str,
+        config: &ChannelConfig,
+    ) -> MessagingResult<()> {
+        let bot_token =
+            config
+                .bot_token
+                .as_deref()
+                .ok_or_else(|| MessagingError::ChannelNotConfigured {
+                    channel: "discord".to_owned(),
+                })?;
+
+        let url =
+            format!("https://discord.com/api/v10/channels/{channel_id}/messages/{message_id}");
+        let response = self
+            .client
+            .delete(&url)
+            .header("Authorization", format!("Bot {bot_token}"))
+            .send()
+            .await
+            .map_err(|e| MessagingError::DeliveryFailed {
+                channel: "discord".to_owned(),
+                reason: format!("delete HTTP request failed: {e}"),
+                retryable: true,
+            })?;
+
+        if response.status().is_success() {
+            debug!(channel_id, message_id, "discord message deleted");
+            return Ok(());
+        }
+
+        let status = response.status().as_u16();
+        let body_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "unknown".to_owned());
+        Err(MessagingError::ChannelApiError {
+            channel: "discord".to_owned(),
+            status_code: status,
+            message: body_text,
+        })
+    }
+}
