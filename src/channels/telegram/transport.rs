@@ -284,26 +284,7 @@ impl TelegramTransport {
                     channel: "telegram".to_owned(),
                 })?;
 
-        // Telegram's deleteMessage requires an integer message_id; the
-        // platform stores it as a string, so parse it back here.
-        let message_id_int: i64 =
-            message_id
-                .parse()
-                .map_err(|e| MessagingError::DeliveryFailed {
-                    channel: "telegram".to_owned(),
-                    reason: format!("invalid message_id '{message_id}': {e}"),
-                    retryable: false,
-                })?;
-
-        // chat_id is "Integer or String" in the Bot API. Numeric ids
-        // (including negative supergroup ids) go as integers; the rare
-        // @username form stays a string.
-        let chat_id_value = chat_id_to_value(chat_id);
-
-        let payload = serde_json::json!({
-            "chat_id": chat_id_value,
-            "message_id": message_id_int,
-        });
+        let payload = build_delete_message_payload(chat_id, message_id)?;
 
         let url = format!("https://api.telegram.org/bot{bot_token}/deleteMessage");
         let response = self
@@ -343,6 +324,31 @@ fn chat_id_to_value(chat_id: &str) -> Value {
     chat_id
         .parse::<i64>()
         .map_or_else(|_| Value::from(chat_id), Value::from)
+}
+
+/// Build the `deleteMessage` request body.
+///
+/// Telegram requires `message_id` to be an integer, so the platform's string
+/// id is parsed here; `chat_id` follows the Bot API "Integer or String" rule
+/// (see [`chat_id_to_value`]).
+///
+/// # Errors
+///
+/// Returns [`MessagingError::DeliveryFailed`] when `message_id` is not a valid
+/// integer.
+fn build_delete_message_payload(chat_id: &str, message_id: &str) -> MessagingResult<Value> {
+    let message_id_int: i64 = message_id
+        .parse()
+        .map_err(|e| MessagingError::DeliveryFailed {
+            channel: "telegram".to_owned(),
+            reason: format!("invalid message_id '{message_id}': {e}"),
+            retryable: false,
+        })?;
+
+    Ok(serde_json::json!({
+        "chat_id": chat_id_to_value(chat_id),
+        "message_id": message_id_int,
+    }))
 }
 
 /// Resolve the Telegram Bot API method from the rendered payload shape
@@ -502,8 +508,29 @@ fn parse_non_text_content(message: &Value) -> MessageContent {
 
 #[cfg(test)]
 mod tests {
-    use super::chat_id_to_value;
+    use super::{build_delete_message_payload, chat_id_to_value};
     use serde_json::Value;
+
+    #[test]
+    fn delete_payload_uses_integer_message_id_and_numeric_chat() {
+        let payload = build_delete_message_payload("-1001234567890", "42").unwrap_or(Value::Null);
+        // chat_id stays numeric, message_id is an integer (not a string).
+        assert_eq!(payload["chat_id"], Value::from(-1_001_234_567_890_i64));
+        assert_eq!(payload["message_id"], Value::from(42_i64));
+    }
+
+    #[test]
+    fn delete_payload_keeps_username_chat_as_string() {
+        let payload = build_delete_message_payload("@dravrchannel", "7").unwrap_or(Value::Null);
+        assert_eq!(payload["chat_id"], Value::from("@dravrchannel"));
+        assert_eq!(payload["message_id"], Value::from(7_i64));
+    }
+
+    #[test]
+    fn delete_payload_rejects_non_integer_message_id() {
+        // A non-numeric message id can't be sent to deleteMessage.
+        assert!(build_delete_message_payload("99", "not-a-number").is_err());
+    }
 
     #[test]
     fn numeric_chat_id_becomes_a_json_number() {

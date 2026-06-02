@@ -144,10 +144,62 @@ pub trait MessagingChannel: Send + Sync {
         recipient_user_id: &str,
         config: &ChannelConfig,
     ) -> MessagingResult<DeliveryReceipt> {
-        let mut dm = msg.clone();
-        recipient_user_id.clone_into(&mut dm.recipient_id);
-        // A private 1:1 chat has no room thread/topic to route into.
-        dm.thread_id = None;
+        let dm = dm_redirect(msg, recipient_user_id);
         self.send(&dm, config).await
+    }
+}
+
+/// Re-address a reply to a single user so it lands in a 1:1 DM.
+///
+/// The recipient becomes the user id and any room thread/topic is dropped (a
+/// private chat has none). Content, channel, turn id, and `reply_to` are
+/// preserved. Used by the default [`MessagingChannel::send_private_reply`] for
+/// channels whose recipient id is the user id (Telegram, `WhatsApp`, Messenger).
+#[must_use]
+pub fn dm_redirect(msg: &OutgoingMessage, recipient_user_id: &str) -> OutgoingMessage {
+    let mut dm = msg.clone();
+    recipient_user_id.clone_into(&mut dm.recipient_id);
+    dm.thread_id = None;
+    dm
+}
+
+#[cfg(test)]
+mod tests {
+    use super::dm_redirect;
+    use crate::models::{ChannelType, MessageContent, OutgoingMessage};
+    use crate::turn::ConversationTurnId;
+
+    fn sample_room_reply() -> OutgoingMessage {
+        OutgoingMessage {
+            channel_type: ChannelType::Telegram,
+            recipient_id: "-1009999".to_owned(), // a group/room id
+            content: MessageContent::Text {
+                body: "your status".to_owned(),
+            },
+            turn_id: ConversationTurnId::new(),
+            reply_to: None,
+            thread_id: Some("17".to_owned()), // a forum topic in the room
+        }
+    }
+
+    #[test]
+    fn dm_redirect_targets_user_and_drops_room_thread() {
+        let dm = dm_redirect(&sample_room_reply(), "user-555");
+        // Reply now addressed to the user (1:1 DM), not the room.
+        assert_eq!(dm.recipient_id, "user-555");
+        // The room's forum topic doesn't exist in a DM.
+        assert!(dm.thread_id.is_none());
+    }
+
+    #[test]
+    fn dm_redirect_preserves_content_and_channel() {
+        let original = sample_room_reply();
+        let dm = dm_redirect(&original, "user-555");
+        assert_eq!(dm.channel_type, original.channel_type);
+        let body = match &dm.content {
+            MessageContent::Text { body } => body.as_str(),
+            _ => "",
+        };
+        assert_eq!(body, "your status");
     }
 }

@@ -396,8 +396,7 @@ impl DiscordTransport {
                     channel: "discord".to_owned(),
                 })?;
 
-        let url =
-            format!("https://discord.com/api/v10/channels/{channel_id}/messages/{message_id}");
+        let url = delete_message_url(channel_id, message_id);
         let response = self
             .client
             .delete(&url)
@@ -425,5 +424,23 @@ impl DiscordTransport {
             status_code: status,
             message: body_text,
         })
+    }
+}
+
+/// Build the Discord REST URL for deleting a single channel message.
+fn delete_message_url(channel_id: &str, message_id: &str) -> String {
+    format!("https://discord.com/api/v10/channels/{channel_id}/messages/{message_id}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::delete_message_url;
+
+    #[test]
+    fn delete_url_targets_the_channel_message_endpoint() {
+        assert_eq!(
+            delete_message_url("123456789", "987654321"),
+            "https://discord.com/api/v10/channels/123456789/messages/987654321"
+        );
     }
 }

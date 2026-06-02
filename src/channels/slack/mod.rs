@@ -134,14 +134,67 @@ impl MessagingChannel for SlackChannel {
         // Slack's private primitive is an ephemeral message: visible only to
         // `recipient_user_id`, posted into the same channel the command came
         // from (msg.recipient_id), and never stored in channel history. Render
-        // the normal payload, then add the target user and route it to
+        // the normal payload, add the target user, and route it to
         // chat.postEphemeral.
-        let mut payload = self.render(msg)?;
-        if let Some(obj) = payload.as_object_mut() {
-            obj.insert("user".to_owned(), Value::from(recipient_user_id));
-        }
+        let payload = ephemeral_payload(self.render(msg)?, recipient_user_id);
         self.transport
             .send_ephemeral(&payload, msg.turn_id, config)
             .await
+    }
+}
+
+/// Turn a rendered `chat.postMessage` payload into a `chat.postEphemeral` one.
+///
+/// Adds the `user` field; the `channel` field (the room the command came from)
+/// is left as the renderer set it, so the ephemeral message appears in that
+/// channel but only to `recipient_user_id`.
+#[must_use]
+pub fn ephemeral_payload(rendered: Value, recipient_user_id: &str) -> Value {
+    let mut payload = rendered;
+    if let Some(obj) = payload.as_object_mut() {
+        obj.insert("user".to_owned(), Value::from(recipient_user_id));
+    }
+    payload
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ephemeral_payload, SlackChannel};
+    use crate::channel::MessagingChannel;
+    use crate::models::{ChannelType, MessageContent, OutgoingMessage};
+    use crate::turn::ConversationTurnId;
+    use serde_json::Value;
+
+    #[test]
+    fn ephemeral_payload_adds_user_and_keeps_channel() {
+        // A rendered postMessage payload addresses the room via `channel`.
+        let rendered = serde_json::json!({ "channel": "C-ROOM", "text": "your status" });
+        let payload = ephemeral_payload(rendered, "U-CALLER");
+        // postEphemeral needs `user`; the room channel is preserved so the
+        // ephemeral reply shows in-channel but only to the caller.
+        assert_eq!(payload["user"], Value::from("U-CALLER"));
+        assert_eq!(payload["channel"], Value::from("C-ROOM"));
+        assert_eq!(payload["text"], Value::from("your status"));
+    }
+
+    #[test]
+    fn ephemeral_payload_channel_comes_from_rendered_recipient() {
+        // The renderer addresses `channel` to the message recipient (the room
+        // the slash command arrived in), so the ephemeral reply targets it.
+        let channel = SlackChannel::new("signing-secret".to_owned());
+        let msg = OutgoingMessage {
+            channel_type: ChannelType::Slack,
+            recipient_id: "C-ROOM".to_owned(),
+            content: MessageContent::Text {
+                body: "hi".to_owned(),
+            },
+            turn_id: ConversationTurnId::new(),
+            reply_to: None,
+            thread_id: None,
+        };
+        let rendered = channel.render(&msg).unwrap_or(Value::Null);
+        let payload = ephemeral_payload(rendered, "U-CALLER");
+        assert_eq!(payload["channel"], Value::from("C-ROOM"));
+        assert_eq!(payload["user"], Value::from("U-CALLER"));
     }
 }

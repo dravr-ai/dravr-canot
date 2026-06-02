@@ -22,7 +22,7 @@ use async_trait::async_trait;
 use http::HeaderMap;
 use serde_json::Value;
 
-use crate::channel::MessagingChannel;
+use crate::channel::{dm_redirect, MessagingChannel};
 use crate::descriptor::ChannelDescriptor;
 use crate::renderer::ResponseRenderer;
 use crate::transport::TransportAdapter;
@@ -135,13 +135,12 @@ impl MessagingChannel for DiscordChannel {
         config: &ChannelConfig,
     ) -> MessagingResult<DeliveryReceipt> {
         // Discord can't post to a user id directly — open the 1:1 DM channel,
-        // then send the reply there so only the caller sees it.
-        let mut dm = msg.clone();
-        dm.recipient_id = self
+        // then re-address the reply to it so only the caller sees it.
+        let dm_channel_id = self
             .transport
             .open_dm_channel(recipient_user_id, config)
             .await?;
-        dm.thread_id = None;
+        let dm = dm_redirect(msg, &dm_channel_id);
         self.send(&dm, config).await
     }
 }
