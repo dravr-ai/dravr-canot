@@ -77,6 +77,7 @@ license = "MIT OR Apache-2.0"
 description = "Unified multi-platform messaging library for WhatsApp, Slack, Discord, Telegram, and Messenger"
 repository = "https://github.com/dravr-ai/dravr-canot"
 homepage = "https://github.com/dravr-ai/dravr-canot"
+publish = false
 documentation = "https://docs.rs/dravr-canot"
 keywords = ["messaging", "whatsapp", "slack", "discord", "telegram"]
 categories = ["api-bindings", "web-programming::http-server"]

@@ -12,6 +12,7 @@ license = "MIT OR Apache-2.0"
 description = "MCP server for dravr-canot — expose messaging channels via Model Context Protocol"
 repository = "https://github.com/dravr-ai/dravr-canot"
 keywords = ["mcp", "messaging", "whatsapp", "slack", "discord"]
+publish = false
 categories = ["web-programming::http-server"]
 readme = "../../README.md"
 

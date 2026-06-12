@@ -12,6 +12,7 @@ license = "MIT OR Apache-2.0"
 description = "Unified REST API + MCP server for multi-platform messaging"
 repository = "https://github.com/dravr-ai/dravr-canot"
 keywords = ["messaging", "rest", "mcp", "webhook", "server"]
+publish = false
 categories = ["web-programming::http-server"]
 readme = "../../README.md"
 

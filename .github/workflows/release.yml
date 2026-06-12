@@ -242,36 +242,14 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  publish-cargo:
-    name: Publish to crates.io
-    needs: version
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: v${{ needs.version.outputs.version }}
-
-      - uses: dtolnay/rust-toolchain@1.96.0
-
-      - name: Publish to crates.io
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: |
-          cargo publish -p dravr-canot || echo "dravr-canot already published, continuing..."
-
-          echo "Waiting for crates.io to index dravr-canot..."
-          sleep 30
-
-          cargo publish -p dravr-canot-mcp || echo "dravr-canot-mcp already published, continuing..."
-
-          echo "Waiting for crates.io to index dravr-canot-mcp..."
-          sleep 30
-
-          cargo publish -p dravr-canot-server || echo "dravr-canot-server already published, continuing..."
+  # crates.io publishing removed: dravr-canot's crates are private (`publish = false`).
+  # They must never reach the public registry — the previous publish-cargo job here
+  # leaked dravr-canot/-mcp/-server 0.1.1–0.3.2 (since yanked). The platform consumes
+  # this repo via git tags, not crates.io versions.
 
   update-homebrew:
     name: Update Homebrew
-    needs: [version, build-and-release, publish-cargo]
+    needs: [version, build-and-release]
     if: false  # Disabled while repo is private: no macOS artifacts to checksum. Remove this line to restore.
     runs-on: ubuntu-latest
     permissions:

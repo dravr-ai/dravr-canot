@@ -12,6 +12,7 @@ license = "MIT OR Apache-2.0"
 description = "Claude Code channel server for dravr-canot — bridge Slack/Telegram to Claude Code sessions via MCP"
 repository = "https://github.com/dravr-ai/dravr-canot"
 keywords = ["mcp", "claude", "channels", "slack", "telegram"]
+publish = false
 categories = ["web-programming::http-server"]
 readme = "../../README.md"
 
