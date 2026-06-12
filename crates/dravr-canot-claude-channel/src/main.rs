@@ -27,6 +27,12 @@ mod sender_gate;
 mod webhook;
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::str_to_string
+)]
 mod test_support;
 
 /// Channel event buffer size for the mpsc channel between webhook server and MCP loop
@@ -91,7 +97,7 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
     let registry = Arc::new(registry);
     let configs = Arc::new(configs);
     let sender_gate = Arc::new(sender_gate::SenderGate::from_csv(&cli.allowed_senders));
-    let permission_relay = Arc::new(permission::PermissionRelay::build());
+    let permission_relay = Arc::new(permission::PermissionRelay::build()?);
 
     if sender_gate.is_empty() {
         warn!("No --allowed-senders specified — all senders will be accepted (open mode)");

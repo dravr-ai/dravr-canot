@@ -502,6 +502,12 @@ async fn write_json(stdout: &StdoutWriter, value: &Value) -> Result<(), io::Erro
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::str_to_string
+)]
 mod tests {
     use std::sync::Arc;
 

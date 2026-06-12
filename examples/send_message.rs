@@ -6,6 +6,13 @@
 //
 // Run with: cargo run --example send_message --features channel-slack
 
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::str_to_string
+)]
+
 use dravr_canot::factory::create_adapter_from_config;
 use dravr_canot::models::{ChannelType, MessageContent, OutgoingMessage};
 use dravr_canot::turn::ConversationTurnId;

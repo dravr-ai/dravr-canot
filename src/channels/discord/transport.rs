@@ -433,6 +433,12 @@ fn delete_message_url(channel_id: &str, message_id: &str) -> String {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::str_to_string
+)]
 mod tests {
     use super::delete_message_url;
 

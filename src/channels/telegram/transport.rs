@@ -507,6 +507,12 @@ fn parse_non_text_content(message: &Value) -> MessageContent {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::str_to_string
+)]
 mod tests {
     use super::{build_delete_message_payload, chat_id_to_value};
     use serde_json::Value;

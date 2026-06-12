@@ -4,6 +4,12 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright (c) 2026 dravr.ai
 
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::str_to_string
+)]
 #![cfg(feature = "channel-slack")]
 
 use dravr_canot::channels::slack::transport::SlackTransport;

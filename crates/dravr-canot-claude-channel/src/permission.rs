@@ -60,16 +60,15 @@ pub struct PermissionRelay {
 
 impl PermissionRelay {
     /// Create a permission relay instance
-    pub fn build() -> Self {
+    pub fn build() -> Result<Self, regex::Error> {
         // Matches "y abcde", "yes abcde", "n abcde", "no abcde"
         // [a-km-z] is the ID alphabet Claude Code uses (lowercase, skips 'l')
         // Case-insensitive to tolerate phone autocorrect
-        let verdict_pattern =
-            Regex::new(r"(?i)^\s*(y|yes|n|no)\s+([a-km-z]{5})\s*$").expect("valid regex"); // Safe: hardcoded valid regex pattern
-        Self {
+        let verdict_pattern = Regex::new(r"(?i)^\s*(y|yes|n|no)\s+([a-km-z]{5})\s*$")?;
+        Ok(Self {
             pending_requests: RwLock::new(HashMap::new()),
             verdict_pattern,
-        }
+        })
     }
 
     /// Try to parse an inbound message as a permission verdict and consume
@@ -187,11 +186,17 @@ impl PermissionRelay {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::str_to_string
+)]
 mod tests {
     use super::*;
 
     fn relay() -> PermissionRelay {
-        PermissionRelay::build()
+        PermissionRelay::build().unwrap()
     }
 
     // --- Verdict parsing tests (regex matching) ---

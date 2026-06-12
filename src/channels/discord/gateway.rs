@@ -514,6 +514,12 @@ fn calculate_backoff_delay(attempt: u32) -> Duration {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::str_to_string
+)]
 mod tests {
     use super::*;
 

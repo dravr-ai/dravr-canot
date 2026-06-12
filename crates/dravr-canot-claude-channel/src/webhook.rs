@@ -166,6 +166,12 @@ fn extract_text_content(content: &MessageContent) -> String {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::str_to_string
+)]
 mod tests {
     use std::sync::Arc;
 

@@ -164,6 +164,12 @@ pub fn dm_redirect(msg: &OutgoingMessage, recipient_user_id: &str) -> OutgoingMe
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::str_to_string
+)]
 mod tests {
     use super::dm_redirect;
     use crate::models::{ChannelType, MessageContent, OutgoingMessage};

@@ -30,6 +30,13 @@
 //! matching coverage in `tests/agui_telegram_e2e.rs` — the demo
 //! exercises the same code paths against real endpoints.
 
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::str_to_string
+)]
+
 use dravr_canot::agui_consumer::{AgUiConsumer, AgUiEvent};
 use dravr_canot::agui_status::{status_text_for_event, StatusAdapter};
 use dravr_canot::channels::telegram::agui_status::TelegramStatusAdapter;

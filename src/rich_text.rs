@@ -272,6 +272,12 @@ pub fn render_plain(spans: &[Span]) -> String {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::str_to_string
+)]
 mod tests {
     use super::{
         parse, render_discord_markdown, render_plain, render_slack_mrkdwn, render_telegram_html,
