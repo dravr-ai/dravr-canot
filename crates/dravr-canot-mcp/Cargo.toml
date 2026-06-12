@@ -34,7 +34,7 @@ all-channels = ["channel-whatsapp", "channel-messenger", "channel-discord", "cha
 
 [dependencies]
 dravr-canot = { path = "../..", version = "0.4.17" }
-dravr-tronc = "0.2"
+dravr-tronc = "0.3"
 async-trait = "0.1"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }

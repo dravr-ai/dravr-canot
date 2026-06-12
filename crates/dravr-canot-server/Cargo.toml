@@ -35,7 +35,7 @@ all-channels = ["channel-whatsapp", "channel-messenger", "channel-discord", "cha
 [dependencies]
 dravr-canot = { path = "../..", version = "0.4.17" }
 dravr-canot-mcp = { path = "../dravr-canot-mcp", version = "0.4.17", default-features = false }
-dravr-tronc = { version = "0.2", features = ["notifications"] }
+dravr-tronc = { version = "0.3", features = ["notifications"] }
 axum = "0.8"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
