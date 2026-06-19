@@ -196,7 +196,7 @@ mod tests {
     use super::*;
 
     fn relay() -> PermissionRelay {
-        PermissionRelay::build().unwrap()
+        PermissionRelay::build().unwrap() // Safe: test relay builds from static config
     }
 
     // --- Verdict parsing tests (regex matching) ---
