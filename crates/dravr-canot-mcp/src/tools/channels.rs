@@ -5,8 +5,8 @@
 // Copyright (c) 2026 dravr.ai
 
 use async_trait::async_trait;
-use dravr_tronc::mcp::protocol::{CallToolResult, ToolDefinition};
-use dravr_tronc::McpTool;
+use dravr_tronc::mcp::schema::{Tool, ToolResponse};
+use dravr_tronc::{McpTool, ToolContext};
 use serde_json::{json, Value};
 
 use crate::state::{ServerState, SharedState};
@@ -16,20 +16,25 @@ pub struct ListChannels;
 
 #[async_trait]
 impl McpTool<ServerState> for ListChannels {
-    fn definition(&self) -> ToolDefinition {
-        ToolDefinition {
+    fn definition(&self) -> Tool {
+        Tool {
             name: "list_channels".to_owned(),
             description: "List all registered messaging channels and their capabilities".to_owned(),
             input_schema: json!({
                 "type": "object",
                 "properties": {}
             }),
+            annotations: None,
         }
     }
 
-    async fn execute(&self, state: &SharedState, _arguments: Value) -> CallToolResult {
-        let guard = state.read().await;
-        let registry = guard.registry();
+    async fn execute(
+        &self,
+        state: &SharedState,
+        _ctx: &ToolContext,
+        _arguments: Value,
+    ) -> ToolResponse {
+        let registry = state.registry();
         let channel_types = registry.registered_channels();
 
         let channels: Vec<Value> = channel_types
@@ -46,7 +51,7 @@ impl McpTool<ServerState> for ListChannels {
             })
             .collect();
 
-        CallToolResult::text(
+        ToolResponse::text(
             json!({
                 "channel_count": channels.len(),
                 "channels": channels,

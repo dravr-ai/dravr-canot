@@ -7,8 +7,8 @@
 use async_trait::async_trait;
 use dravr_canot::models::{ChannelType, MessageContent, OutgoingMessage};
 use dravr_canot::turn::ConversationTurnId;
-use dravr_tronc::mcp::protocol::{CallToolResult, ToolDefinition};
-use dravr_tronc::McpTool;
+use dravr_tronc::mcp::schema::{Tool, ToolResponse};
+use dravr_tronc::{McpTool, ToolContext};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
@@ -19,8 +19,8 @@ pub struct SendMessage;
 
 #[async_trait]
 impl McpTool<ServerState> for SendMessage {
-    fn definition(&self) -> ToolDefinition {
-        ToolDefinition {
+    fn definition(&self) -> Tool {
+        Tool {
             name: "send_message".to_owned(),
             description: "Send a text message through a registered messaging channel".to_owned(),
             input_schema: json!({
@@ -51,25 +51,31 @@ impl McpTool<ServerState> for SendMessage {
                 },
                 "required": ["channel_type", "recipient_id", "content", "turn_id"]
             }),
+            annotations: None,
         }
     }
 
-    async fn execute(&self, state: &SharedState, arguments: Value) -> CallToolResult {
+    async fn execute(
+        &self,
+        state: &SharedState,
+        _ctx: &ToolContext,
+        arguments: Value,
+    ) -> ToolResponse {
         let Some(channel_type_str) = arguments.get("channel_type").and_then(Value::as_str) else {
-            return CallToolResult::error("Missing 'channel_type' argument".to_owned());
+            return ToolResponse::error("Missing 'channel_type' argument".to_owned());
         };
 
         let channel_type: ChannelType = match channel_type_str.parse() {
             Ok(ct) => ct,
-            Err(e) => return CallToolResult::error(format!("Invalid channel_type: {e}")),
+            Err(e) => return ToolResponse::error(format!("Invalid channel_type: {e}")),
         };
 
         let Some(recipient_id) = arguments.get("recipient_id").and_then(Value::as_str) else {
-            return CallToolResult::error("Missing 'recipient_id' argument".to_owned());
+            return ToolResponse::error("Missing 'recipient_id' argument".to_owned());
         };
 
         let Some(content) = arguments.get("content").and_then(Value::as_str) else {
-            return CallToolResult::error("Missing 'content' argument".to_owned());
+            return ToolResponse::error("Missing 'content' argument".to_owned());
         };
 
         let reply_to = arguments
@@ -78,16 +84,14 @@ impl McpTool<ServerState> for SendMessage {
             .map(String::from);
 
         let Some(turn_id_str) = arguments.get("turn_id").and_then(Value::as_str) else {
-            return CallToolResult::error(
+            return ToolResponse::error(
                 "Missing 'turn_id' argument: caller must provide the conversation-turn identifier"
                     .to_owned(),
             );
         };
         let turn_id = match Uuid::parse_str(turn_id_str) {
             Ok(id) => ConversationTurnId::from_uuid(id),
-            Err(e) => {
-                return CallToolResult::error(format!("Invalid turn_id (expected UUID): {e}"))
-            }
+            Err(e) => return ToolResponse::error(format!("Invalid turn_id (expected UUID): {e}")),
         };
 
         let msg = OutgoingMessage {
@@ -101,22 +105,20 @@ impl McpTool<ServerState> for SendMessage {
             thread_id: None,
         };
 
-        let guard = state.read().await;
-
-        let Some(channel) = guard.registry().get(&channel_type) else {
-            return CallToolResult::error(format!(
+        let Some(channel) = state.registry().get(&channel_type) else {
+            return ToolResponse::error(format!(
                 "Channel '{channel_type}' is not registered in the server"
             ));
         };
 
-        let Some(config) = guard.get_config(&channel_type) else {
-            return CallToolResult::error(format!(
+        let Some(config) = state.get_config(&channel_type).await else {
+            return ToolResponse::error(format!(
                 "No configuration found for channel '{channel_type}'. Use set_channel_config first."
             ));
         };
 
-        match channel.send(&msg, config).await {
-            Ok(receipt) => CallToolResult::text(
+        match channel.send(&msg, &config).await {
+            Ok(receipt) => ToolResponse::text(
                 json!({
                     "status": "sent",
                     "message_id": receipt.message_id,
@@ -127,7 +129,7 @@ impl McpTool<ServerState> for SendMessage {
                 })
                 .to_string(),
             ),
-            Err(e) => CallToolResult::error(format!("Failed to send message: {e}")),
+            Err(e) => ToolResponse::error(format!("Failed to send message: {e}")),
         }
     }
 }

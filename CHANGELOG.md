@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.18] — 2026-06-19
+
+### Changed
+
+- deps: migrate `dravr-canot-mcp` and `dravr-canot-server` to dravr-tronc 0.5.3
+  (dual-era MCP engine). tronc 0.5 hands tools a shared `&Arc<ServerState>` with
+  no outer `RwLock`, so `ServerState.configs` moved to per-field interior
+  mutability (`RwLock<HashMap<…>>`); `get_config`/`set_config` are now `&self`
+  async.
+
+### Fixed
+
+- lint: rewrite an SSE-frame `loop`/`let-else` as `while let` in
+  `agui_consumer` (rust-1.96 `clippy::while_let_loop`).
+
 ## [0.4.17] — 2026-06-02
 
 

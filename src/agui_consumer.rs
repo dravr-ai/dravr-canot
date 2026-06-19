@@ -285,10 +285,7 @@ impl SseFrameParser {
         }
 
         let mut frames = Vec::new();
-        loop {
-            let Some(end) = self.buffer.find("\n\n") else {
-                break;
-            };
+        while let Some(end) = self.buffer.find("\n\n") {
             let raw_frame = self.buffer[..end].to_owned();
             self.buffer.drain(..=end + 1);
 

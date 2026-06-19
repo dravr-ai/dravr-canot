@@ -11,8 +11,12 @@ use dravr_canot::models::{ChannelConfig, ChannelType};
 use dravr_canot::ChannelRegistry;
 use tokio::sync::RwLock;
 
-/// Type alias for the shared state handle used across the server
-pub type SharedState = Arc<RwLock<ServerState>>;
+/// Type alias for the shared state handle used across the server.
+///
+/// `dravr-tronc` 0.5 stores the server state as `Arc<S>` and hands tools a shared
+/// reference, so mutability lives inside `ServerState` (see `configs`) rather than
+/// behind an outer `RwLock`.
+pub type SharedState = Arc<ServerState>;
 
 /// Central server state holding registered channels and their configurations
 ///
@@ -20,7 +24,7 @@ pub type SharedState = Arc<RwLock<ServerState>>;
 /// config map stores per-channel API credentials and settings.
 pub struct ServerState {
     registry: ChannelRegistry,
-    configs: HashMap<ChannelType, ChannelConfig>,
+    configs: RwLock<HashMap<ChannelType, ChannelConfig>>,
 }
 
 impl ServerState {
@@ -28,7 +32,7 @@ impl ServerState {
     pub fn new(registry: ChannelRegistry) -> Self {
         Self {
             registry,
-            configs: HashMap::new(),
+            configs: RwLock::new(HashMap::new()),
         }
     }
 
@@ -42,14 +46,17 @@ impl ServerState {
         &mut self.registry
     }
 
-    /// Look up configuration for a specific channel type
-    pub fn get_config(&self, channel_type: &ChannelType) -> Option<&ChannelConfig> {
-        self.configs.get(channel_type)
+    /// Look up configuration for a specific channel type, returning an owned copy
+    ///
+    /// Reads through the interior `RwLock`: `dravr-tronc` 0.5 hands tools a shared
+    /// `&Arc<ServerState>`, so per-field interior mutability replaces the outer lock.
+    pub async fn get_config(&self, channel_type: &ChannelType) -> Option<ChannelConfig> {
+        self.configs.read().await.get(channel_type).cloned()
     }
 
     /// Set or replace configuration for a specific channel type
-    pub fn set_config(&mut self, channel_type: ChannelType, config: ChannelConfig) {
-        self.configs.insert(channel_type, config);
+    pub async fn set_config(&self, channel_type: ChannelType, config: ChannelConfig) {
+        self.configs.write().await.insert(channel_type, config);
     }
 }
 
@@ -91,28 +98,37 @@ mod tests {
         }
     }
 
-    #[test]
-    fn config_round_trip() {
-        let mut state = ServerState::default();
-        assert!(state.get_config(&ChannelType::WhatsApp).is_none());
+    #[tokio::test]
+    async fn config_round_trip() {
+        let state = ServerState::default();
+        assert!(state.get_config(&ChannelType::WhatsApp).await.is_none());
 
-        state.set_config(
-            ChannelType::WhatsApp,
-            test_config(ChannelType::WhatsApp, "test-key"),
-        );
+        state
+            .set_config(
+                ChannelType::WhatsApp,
+                test_config(ChannelType::WhatsApp, "test-key"),
+            )
+            .await;
 
-        let retrieved = state.get_config(&ChannelType::WhatsApp).expect("config"); // Safe: just inserted above
+        let retrieved = state
+            .get_config(&ChannelType::WhatsApp)
+            .await
+            .expect("config"); // Safe: just inserted above
         assert_eq!(retrieved.api_key.as_deref(), Some("test-key"));
     }
 
-    #[test]
-    fn set_config_replaces_existing() {
-        let mut state = ServerState::default();
+    #[tokio::test]
+    async fn set_config_replaces_existing() {
+        let state = ServerState::default();
 
-        state.set_config(ChannelType::Slack, test_config(ChannelType::Slack, "key-1"));
-        state.set_config(ChannelType::Slack, test_config(ChannelType::Slack, "key-2"));
+        state
+            .set_config(ChannelType::Slack, test_config(ChannelType::Slack, "key-1"))
+            .await;
+        state
+            .set_config(ChannelType::Slack, test_config(ChannelType::Slack, "key-2"))
+            .await;
 
-        let retrieved = state.get_config(&ChannelType::Slack).expect("config"); // Safe: just inserted above
+        let retrieved = state.get_config(&ChannelType::Slack).await.expect("config"); // Safe: just inserted above
         assert_eq!(retrieved.api_key.as_deref(), Some("key-2"));
     }
 }

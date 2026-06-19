@@ -6,8 +6,8 @@
 
 use async_trait::async_trait;
 use dravr_canot::models::{ChannelConfig, ChannelType};
-use dravr_tronc::mcp::protocol::{CallToolResult, ToolDefinition};
-use dravr_tronc::McpTool;
+use dravr_tronc::mcp::schema::{Tool, ToolResponse};
+use dravr_tronc::{McpTool, ToolContext};
 use serde_json::{json, Value};
 
 use crate::state::{ServerState, SharedState};
@@ -17,8 +17,8 @@ pub struct GetChannelConfig;
 
 #[async_trait]
 impl McpTool<ServerState> for GetChannelConfig {
-    fn definition(&self) -> ToolDefinition {
-        ToolDefinition {
+    fn definition(&self) -> Tool {
+        Tool {
             name: "get_channel_config".to_owned(),
             description: "Get the current configuration for a messaging channel".to_owned(),
             input_schema: json!({
@@ -32,24 +32,28 @@ impl McpTool<ServerState> for GetChannelConfig {
                 },
                 "required": ["channel_type"]
             }),
+            annotations: None,
         }
     }
 
-    async fn execute(&self, state: &SharedState, arguments: Value) -> CallToolResult {
+    async fn execute(
+        &self,
+        state: &SharedState,
+        _ctx: &ToolContext,
+        arguments: Value,
+    ) -> ToolResponse {
         let Some(channel_type_str) = arguments.get("channel_type").and_then(Value::as_str) else {
-            return CallToolResult::error("Missing 'channel_type' argument".to_owned());
+            return ToolResponse::error("Missing 'channel_type' argument".to_owned());
         };
 
         let channel_type: ChannelType = match channel_type_str.parse() {
             Ok(ct) => ct,
-            Err(e) => return CallToolResult::error(format!("Invalid channel_type: {e}")),
+            Err(e) => return ToolResponse::error(format!("Invalid channel_type: {e}")),
         };
 
-        let state = state.read().await;
-
-        state.get_config(&channel_type).map_or_else(
+        state.get_config(&channel_type).await.map_or_else(
             || {
-                CallToolResult::text(
+                ToolResponse::text(
                     json!({
                         "channel_type": channel_type.to_string(),
                         "configured": false,
@@ -72,7 +76,7 @@ impl McpTool<ServerState> for GetChannelConfig {
                     "phone_number": config.phone_number,
                     "tenant_id": config.tenant_id,
                 });
-                CallToolResult::text(redacted.to_string())
+                ToolResponse::text(redacted.to_string())
             },
         )
     }
@@ -83,8 +87,8 @@ pub struct SetChannelConfig;
 
 #[async_trait]
 impl McpTool<ServerState> for SetChannelConfig {
-    fn definition(&self) -> ToolDefinition {
-        ToolDefinition {
+    fn definition(&self) -> Tool {
+        Tool {
             name: "set_channel_config".to_owned(),
             description: "Set or update the configuration for a messaging channel".to_owned(),
             input_schema: json!({
@@ -130,17 +134,23 @@ impl McpTool<ServerState> for SetChannelConfig {
                 },
                 "required": ["channel_type"]
             }),
+            annotations: None,
         }
     }
 
-    async fn execute(&self, state: &SharedState, arguments: Value) -> CallToolResult {
+    async fn execute(
+        &self,
+        state: &SharedState,
+        _ctx: &ToolContext,
+        arguments: Value,
+    ) -> ToolResponse {
         let Some(channel_type_str) = arguments.get("channel_type").and_then(Value::as_str) else {
-            return CallToolResult::error("Missing 'channel_type' argument".to_owned());
+            return ToolResponse::error("Missing 'channel_type' argument".to_owned());
         };
 
         let channel_type: ChannelType = match channel_type_str.parse() {
             Ok(ct) => ct,
-            Err(e) => return CallToolResult::error(format!("Invalid channel_type: {e}")),
+            Err(e) => return ToolResponse::error(format!("Invalid channel_type: {e}")),
         };
 
         let tenant_id = arguments
@@ -187,9 +197,9 @@ impl McpTool<ServerState> for SetChannelConfig {
                 .unwrap_or(true),
         };
 
-        state.write().await.set_config(channel_type, config);
+        state.set_config(channel_type, config).await;
 
-        CallToolResult::text(
+        ToolResponse::text(
             json!({
                 "channel_type": channel_type.to_string(),
                 "status": "configured",

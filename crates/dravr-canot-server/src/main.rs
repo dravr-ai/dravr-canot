@@ -19,7 +19,6 @@ use dravr_tronc::server::cli::ServerArgs;
 use dravr_tronc::server::tracing_init;
 use dravr_tronc::McpServer;
 use tokio::net::TcpListener;
-use tokio::sync::RwLock;
 use tracing::{info, warn};
 
 use dravr_canot_server::router;
@@ -57,15 +56,13 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         }
     }
 
-    let state = Arc::new(RwLock::new(ServerState::new(registry)));
+    let state = Arc::new(ServerState::new(registry));
 
-    // Seed configs into server state so webhook/send handlers can access them
-    {
-        let mut guard = state.write().await;
-        for channel_type in &configured_channels {
-            if let Some(config) = env_store.get_config(*channel_type).await {
-                guard.set_config(*channel_type, config);
-            }
+    // Seed configs into server state so webhook/send handlers can access them.
+    // set_config locks the per-field interior RwLock, so the shared Arc<ServerState> is enough.
+    for channel_type in &configured_channels {
+        if let Some(config) = env_store.get_config(*channel_type).await {
+            state.set_config(*channel_type, config).await;
         }
     }
 

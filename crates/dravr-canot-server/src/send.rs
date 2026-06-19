@@ -50,8 +50,7 @@ pub async fn handle(
         "Sending outbound message"
     );
 
-    let state_guard = state.read().await;
-    let registry = state_guard.registry();
+    let registry = state.registry();
 
     let Some(adapter) = registry.get(&request.channel_type) else {
         warn!(channel = %request.channel_type, "No adapter registered for channel");
@@ -71,8 +70,8 @@ pub async fn handle(
     // Resolve channel config: request override takes precedence over server state
     let config = if let Some(cfg) = request.config {
         cfg
-    } else if let Some(cfg) = state_guard.get_config(&request.channel_type) {
-        cfg.clone()
+    } else if let Some(cfg) = state.get_config(&request.channel_type).await {
+        cfg
     } else {
         warn!(channel = %request.channel_type, "No configuration for channel");
         return (

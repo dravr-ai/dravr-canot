@@ -28,20 +28,18 @@ pub struct HealthResponse {
 /// Lists all registered channels with their current status. Returns HTTP 200
 /// if at least one channel is registered, 503 if the registry is empty.
 pub async fn handle(State(state): State<SharedState>) -> impl IntoResponse {
-    let state_guard = state.read().await;
-    let registered = state_guard.registry().registered_channels();
+    let registered = state.registry().registered_channels();
 
     let mut channels = HashMap::new();
 
     for channel_type in &registered {
-        let status = if state_guard.get_config(channel_type).is_some() {
+        let status = if state.get_config(channel_type).await.is_some() {
             "configured"
         } else {
             "registered"
         };
         channels.insert(channel_type.to_string(), status.to_owned());
     }
-    drop(state_guard);
 
     let any_registered = !channels.is_empty();
     let status_str = if any_registered { "ok" } else { "degraded" };

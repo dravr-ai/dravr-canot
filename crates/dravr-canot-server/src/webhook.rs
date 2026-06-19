@@ -54,8 +54,7 @@ pub async fn handle(
 
     debug!(channel = %channel_type, "Received webhook");
 
-    let state_guard = state.read().await;
-    let registry = state_guard.registry();
+    let registry = state.registry();
 
     let Some(adapter) = registry.get(&channel_type) else {
         warn!(channel = %channel_type, "No adapter registered for channel");

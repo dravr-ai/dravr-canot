@@ -14,7 +14,6 @@ use dravr_tronc::mcp::server::McpServer;
 use dravr_tronc::mcp::transport::{http, stdio};
 use dravr_tronc::server::cli::McpArgs;
 use dravr_tronc::server::tracing_init;
-use tokio::sync::RwLock;
 
 /// dravr-canot-mcp — MCP server exposing messaging channels via Model Context Protocol
 #[derive(Parser)]
@@ -30,7 +29,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     tracing_init::init(&cli.server.transport);
 
     let registry = ChannelRegistry::new();
-    let state = Arc::new(RwLock::new(ServerState::new(registry)));
+    let state = Arc::new(ServerState::new(registry));
     let tool_registry = dravr_canot_mcp::build_tool_registry();
     let server = Arc::new(McpServer::new(
         "dravr-canot-mcp",
