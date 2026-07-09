@@ -182,10 +182,12 @@ mod tests {
     use crate::sender_gate::SenderGate;
     use crate::test_support::{sample_incoming, MockAdapter};
 
-    /// Build a `WebhookState` + receiver pair with the given adapter, allowlist, and buffer size.
+    /// Build a `WebhookState` + receiver pair with the given adapter, allowlist,
+    /// open-mode opt-in, and buffer size.
     fn build_state(
         adapter: Arc<MockAdapter>,
         allowed_senders: &str,
+        allow_all: bool,
         buffer: usize,
     ) -> (Arc<WebhookState>, mpsc::Receiver<ChannelEvent>) {
         let mut registry = ChannelRegistry::new();
@@ -193,7 +195,7 @@ mod tests {
         let (event_tx, event_rx) = mpsc::channel(buffer);
         let state = Arc::new(WebhookState {
             registry: Arc::new(registry),
-            sender_gate: Arc::new(SenderGate::from_csv(allowed_senders)),
+            sender_gate: Arc::new(SenderGate::from_csv(allowed_senders, allow_all)),
             event_tx,
         });
         (state, event_rx)
@@ -212,7 +214,7 @@ mod tests {
     #[tokio::test]
     async fn returns_bad_request_for_unknown_channel_name() {
         let adapter = Arc::new(MockAdapter::new(ChannelType::Slack));
-        let (state, _rx) = build_state(adapter, "", 16);
+        let (state, _rx) = build_state(adapter, "", false, 16);
         let (status, body) = call_handler(state, "unknown").await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert!(body.contains("unknown"));
@@ -222,7 +224,7 @@ mod tests {
     async fn returns_not_found_when_adapter_missing() {
         // Register a slack adapter but call /webhook/telegram
         let adapter = Arc::new(MockAdapter::new(ChannelType::Slack));
-        let (state, _rx) = build_state(adapter, "", 16);
+        let (state, _rx) = build_state(adapter, "", false, 16);
         let (status, _body) = call_handler(state, "telegram").await;
         assert_eq!(status, StatusCode::NOT_FOUND);
     }
@@ -230,7 +232,7 @@ mod tests {
     #[tokio::test]
     async fn returns_unauthorized_on_signature_failure() {
         let adapter = Arc::new(MockAdapter::new(ChannelType::Slack).with_verify_failing());
-        let (state, _rx) = build_state(adapter, "", 16);
+        let (state, _rx) = build_state(adapter, "", false, 16);
         let (status, body) = call_handler(state, "slack").await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
         assert!(body.contains("Signature failed"));
@@ -239,7 +241,7 @@ mod tests {
     #[tokio::test]
     async fn returns_bad_request_on_parse_failure() {
         let adapter = Arc::new(MockAdapter::new(ChannelType::Slack).with_parse_failing());
-        let (state, _rx) = build_state(adapter, "", 16);
+        let (state, _rx) = build_state(adapter, "", false, 16);
         let (status, body) = call_handler(state, "slack").await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert!(body.contains("Parse error"));
@@ -249,7 +251,7 @@ mod tests {
     async fn forwards_valid_message_to_mpsc() {
         let msg = sample_incoming(ChannelType::Slack, "U123", Some("C456"), "hello");
         let adapter = Arc::new(MockAdapter::new(ChannelType::Slack).with_inbound(vec![msg]));
-        let (state, mut rx) = build_state(adapter, "", 16);
+        let (state, mut rx) = build_state(adapter, "", true, 16);
 
         let (status, body) = call_handler(state, "slack").await;
         assert_eq!(status, StatusCode::OK);
@@ -278,7 +280,7 @@ mod tests {
         let blocked = sample_incoming(ChannelType::Slack, "U_OTHER", Some("C1"), "spam");
         let adapter =
             Arc::new(MockAdapter::new(ChannelType::Slack).with_inbound(vec![blocked, ok]));
-        let (state, mut rx) = build_state(adapter, "U_ALLOWED", 16);
+        let (state, mut rx) = build_state(adapter, "U_ALLOWED", false, 16);
 
         let (status, _) = call_handler(state, "slack").await;
         assert_eq!(status, StatusCode::OK);
@@ -291,11 +293,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn fails_closed_when_no_allowlist_and_no_opt_in() {
+        // Shipped default: empty allowlist with no --allow-all-senders opt-in rejects
+        // every sender, even one that passes signature verification.
+        let msg = sample_incoming(ChannelType::Slack, "U123", Some("C456"), "hello");
+        let adapter = Arc::new(MockAdapter::new(ChannelType::Slack).with_inbound(vec![msg]));
+        let (state, mut rx) = build_state(adapter, "", false, 16);
+
+        let (status, _) = call_handler(state, "slack").await;
+        assert_eq!(status, StatusCode::OK);
+        // Nothing forwarded — the gate dropped the message.
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
     async fn drops_messages_with_empty_sender_id() {
         let mut msg = sample_incoming(ChannelType::Slack, "U1", Some("C1"), "hi");
         msg.sender_id = String::new();
         let adapter = Arc::new(MockAdapter::new(ChannelType::Slack).with_inbound(vec![msg]));
-        let (state, mut rx) = build_state(adapter, "", 16);
+        let (state, mut rx) = build_state(adapter, "", true, 16);
 
         let (status, _) = call_handler(state, "slack").await;
         assert_eq!(status, StatusCode::OK);
@@ -306,7 +322,7 @@ mod tests {
     async fn uses_sender_id_when_no_conversation_id() {
         let msg = sample_incoming(ChannelType::Slack, "U1", None, "hi");
         let adapter = Arc::new(MockAdapter::new(ChannelType::Slack).with_inbound(vec![msg]));
-        let (state, mut rx) = build_state(adapter, "", 16);
+        let (state, mut rx) = build_state(adapter, "", true, 16);
 
         let (status, _) = call_handler(state, "slack").await;
         assert_eq!(status, StatusCode::OK);
@@ -321,7 +337,7 @@ mod tests {
         let msg1 = sample_incoming(ChannelType::Slack, "U1", Some("C1"), "one");
         let msg2 = sample_incoming(ChannelType::Slack, "U2", Some("C2"), "two");
         let adapter = Arc::new(MockAdapter::new(ChannelType::Slack).with_inbound(vec![msg1, msg2]));
-        let (state, _rx) = build_state(adapter, "", 1);
+        let (state, _rx) = build_state(adapter, "", true, 1);
 
         let (status, body) = call_handler(state, "slack").await;
         assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
@@ -332,7 +348,7 @@ mod tests {
     async fn returns_internal_error_when_receiver_dropped() {
         let msg = sample_incoming(ChannelType::Slack, "U1", Some("C1"), "hi");
         let adapter = Arc::new(MockAdapter::new(ChannelType::Slack).with_inbound(vec![msg]));
-        let (state, rx) = build_state(adapter, "", 16);
+        let (state, rx) = build_state(adapter, "", true, 16);
         drop(rx); // Simulate MCP loop having exited
 
         let (status, body) = call_handler(state, "slack").await;

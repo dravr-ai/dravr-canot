@@ -513,7 +513,15 @@ fn percent_decode(input: &str) -> String {
                 i += 1;
             }
             b'%' if i + 2 < bytes.len() => {
-                if let Ok(byte) = u8::from_str_radix(&input[i + 1..i + 3], 16) {
+                // Parse the two hex digits from the byte slice, never a string slice:
+                // slicing `input` at i+1..i+3 can land inside a multi-byte UTF-8
+                // sequence (a non-char-boundary index) and panic. Byte indexing is
+                // boundary-agnostic; non-ASCII/invalid hex simply fails the parse.
+                let hex = &bytes[i + 1..i + 3];
+                if let Some(byte) = str::from_utf8(hex)
+                    .ok()
+                    .and_then(|s| u8::from_str_radix(s, 16).ok())
+                {
                     result.push(byte);
                     i += 3;
                 } else {
@@ -563,5 +571,26 @@ mod tests {
         let channel_msgs = parse_block_actions(&channel_payload);
         assert_eq!(channel_msgs.len(), 1);
         assert!(!channel_msgs[0].is_direct_message);
+    }
+
+    #[test]
+    fn percent_decode_handles_standard_sequences() {
+        assert_eq!(percent_decode("a%20b+c"), "a b c");
+        assert_eq!(percent_decode("%7B%22k%22%3A1%7D"), "{\"k\":1}");
+        // Incomplete/invalid escapes are preserved literally.
+        assert_eq!(percent_decode("100%"), "100%");
+        assert_eq!(percent_decode("%zz"), "%zz");
+    }
+
+    #[test]
+    fn percent_decode_does_not_panic_on_non_utf8_boundary() {
+        // A literal multi-byte UTF-8 char (€ = E2 82 AC) immediately after '%'.
+        // The old byte-index-into-str slice `&input[i+1..i+3]` lands mid-codepoint
+        // and panics; the byte-slice parse must not. The '%' is preserved literally.
+        let input = "%\u{20AC}";
+        assert_eq!(percent_decode(input), "%\u{20AC}");
+
+        // Also exercise a percent immediately followed by a 2-byte char (é = C3 A9).
+        assert_eq!(percent_decode("%\u{00E9}x"), "%\u{00E9}x");
     }
 }

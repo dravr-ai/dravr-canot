@@ -13,27 +13,35 @@ use std::collections::HashSet;
 pub struct SenderGate {
     /// Set of allowed sender IDs (platform-specific: Slack user ID, Telegram user ID, etc.)
     allowed: HashSet<String>,
+    /// Explicit opt-in to open mode. When `true`, every sender is accepted; when
+    /// `false`, an empty allowlist fails closed (rejects everyone).
+    allow_all: bool,
 }
 
 impl SenderGate {
     /// Create a gate from a comma-separated list of sender IDs.
     ///
-    /// Empty or whitespace-only entries are silently skipped.
-    pub fn from_csv(csv: &str) -> Self {
+    /// Empty or whitespace-only entries are silently skipped. `allow_all` is the
+    /// explicit opt-in to open mode: with an empty allowlist the gate rejects every
+    /// sender unless `allow_all` is set, so the shipped default is fail-closed.
+    pub fn from_csv(csv: &str, allow_all: bool) -> Self {
         let allowed = csv
             .split(',')
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .map(String::from)
             .collect();
-        Self { allowed }
+        Self { allowed, allow_all }
     }
 
-    /// Check whether a sender ID is in the allowlist.
+    /// Check whether a sender ID is permitted.
     ///
-    /// Returns `true` if the allowlist is empty (open mode) or if the sender is listed.
+    /// Returns `true` only when open mode was explicitly opted into (`allow_all`)
+    /// or the sender is present in the allowlist. An empty allowlist without the
+    /// opt-in rejects every sender (fail-closed), so a bare default cannot silently
+    /// forward messages from arbitrary users.
     pub fn is_allowed(&self, sender_id: &str) -> bool {
-        self.allowed.is_empty() || self.allowed.contains(sender_id)
+        self.allow_all || self.allowed.contains(sender_id)
     }
 
     /// Number of sender IDs in the allowlist.
@@ -41,7 +49,7 @@ impl SenderGate {
         self.allowed.len()
     }
 
-    /// Whether the allowlist is empty (open mode — all senders permitted).
+    /// Whether the allowlist is empty (no explicit sender IDs configured).
     pub fn is_empty(&self) -> bool {
         self.allowed.is_empty()
     }
@@ -58,15 +66,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn empty_csv_allows_all() {
-        let gate = SenderGate::from_csv("");
+    fn empty_csv_denies_all_by_default() {
+        // Fail-closed: a bare default (empty allowlist, no opt-in) rejects everyone.
+        let gate = SenderGate::from_csv("", false);
+        assert!(gate.is_empty());
+        assert!(!gate.is_allowed("anyone"));
+    }
+
+    #[test]
+    fn empty_csv_with_allow_all_opt_in_allows_all() {
+        // Explicit opt-in restores open mode.
+        let gate = SenderGate::from_csv("", true);
         assert!(gate.is_empty());
         assert!(gate.is_allowed("anyone"));
     }
 
     #[test]
     fn csv_with_entries_gates_correctly() {
-        let gate = SenderGate::from_csv("U123,U456");
+        let gate = SenderGate::from_csv("U123,U456", false);
         assert_eq!(gate.len(), 2);
         assert!(gate.is_allowed("U123"));
         assert!(gate.is_allowed("U456"));
@@ -75,14 +92,14 @@ mod tests {
 
     #[test]
     fn trims_whitespace() {
-        let gate = SenderGate::from_csv(" U123 , U456 ");
+        let gate = SenderGate::from_csv(" U123 , U456 ", false);
         assert!(gate.is_allowed("U123"));
         assert!(gate.is_allowed("U456"));
     }
 
     #[test]
     fn skips_empty_entries() {
-        let gate = SenderGate::from_csv("U123,,U456,");
+        let gate = SenderGate::from_csv("U123,,U456,", false);
         assert_eq!(gate.len(), 2);
     }
 }

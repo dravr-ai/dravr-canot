@@ -5,6 +5,7 @@
 // Copyright (c) 2026 dravr.ai
 
 use std::collections::HashMap;
+use std::env;
 use std::error::Error as StdError;
 use std::io;
 use std::sync::Arc;
@@ -46,9 +47,29 @@ struct Cli {
     #[arg(long, default_value = "3001", env = "DRAVR_CHANNEL_WEBHOOK_PORT")]
     webhook_port: u16,
 
-    /// Comma-separated list of allowed sender IDs (empty = allow all)
+    /// Comma-separated list of allowed sender IDs. Empty fails closed (rejects all
+    /// senders) unless --allow-all-senders is set.
     #[arg(long, default_value = "", env = "DRAVR_CHANNEL_ALLOWED_SENDERS")]
     allowed_senders: String,
+
+    /// Accept messages from any sender (open mode). Required to keep the gate open
+    /// when no --allowed-senders are configured; otherwise the gate fails closed.
+    #[arg(long = "allow-all-senders")]
+    allow_all_senders: bool,
+}
+
+/// Whether the `DRAVR_CHANNEL_ALLOW_ALL` env var is set to a truthy value.
+///
+/// Accepts `1`, `true`, `yes`, `on` (case-insensitive) as the opt-in to open mode,
+/// mirroring the `--allow-all-senders` CLI flag.
+fn allow_all_from_env() -> bool {
+    env::var("DRAVR_CHANNEL_ALLOW_ALL").is_ok_and(|v| {
+        let v = v.trim();
+        v == "1"
+            || v.eq_ignore_ascii_case("true")
+            || v.eq_ignore_ascii_case("yes")
+            || v.eq_ignore_ascii_case("on")
+    })
 }
 
 #[tokio::main]
@@ -96,11 +117,19 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
 
     let registry = Arc::new(registry);
     let configs = Arc::new(configs);
-    let sender_gate = Arc::new(sender_gate::SenderGate::from_csv(&cli.allowed_senders));
+    let allow_all = cli.allow_all_senders || allow_all_from_env();
+    let sender_gate = Arc::new(sender_gate::SenderGate::from_csv(
+        &cli.allowed_senders,
+        allow_all,
+    ));
     let permission_relay = Arc::new(permission::PermissionRelay::build()?);
 
     if sender_gate.is_empty() {
-        warn!("No --allowed-senders specified — all senders will be accepted (open mode)");
+        if allow_all {
+            warn!("--allow-all-senders is set with no allowlist — ALL senders will be accepted (open mode). Any user who can DM the bot can inject messages; signature verification only proves platform origin, not sender identity.");
+        } else {
+            error!("No --allowed-senders configured and --allow-all-senders not set — gate is FAIL-CLOSED: every inbound message will be REJECTED. Set DRAVR_CHANNEL_ALLOWED_SENDERS (or --allowed-senders), or pass --allow-all-senders / DRAVR_CHANNEL_ALLOW_ALL=1 to accept messages.");
+        }
     } else {
         info!(count = sender_gate.len(), "Sender allowlist configured");
     }
