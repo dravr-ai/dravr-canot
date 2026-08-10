@@ -235,6 +235,21 @@ pub struct IncomingMessage {
     /// deserialization to keep older payloads compatible.
     #[serde(default)]
     pub is_direct_message: bool,
+    /// `true` when this message explicitly addresses the bot: an @-mention
+    /// of the bot's own identity, a reply to one of the bot's messages, or
+    /// an interaction with a bot-owned UI element (inline-keyboard tap,
+    /// Slack block action, Discord interaction). Direct messages are
+    /// inherently addressed to the bot, so every DM carries `true`. Hosts
+    /// use this to gate group replies to explicitly-addressed turns.
+    /// Detection is best-effort per channel: Telegram needs the bot
+    /// username (config `bot_username`) for @-mention matching and derives
+    /// the bot id from `bot_token` for reply detection; Slack matches
+    /// `<@U…>` mentions against the event's `authorizations`; Discord
+    /// matches `mentions[]` / `referenced_message` against the gateway's
+    /// READY user id. Serde defaults to `false` so older payloads stay
+    /// deserializable.
+    #[serde(default)]
+    pub addressed_to_bot: bool,
     /// Additional platform-specific metadata
     pub metadata: Value,
 }

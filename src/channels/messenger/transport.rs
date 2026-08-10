@@ -113,6 +113,9 @@ impl TransportAdapter for MessengerTransport {
                         // Facebook Messenger Platform only delivers 1:1
                         // user→page conversations to webhooks.
                         is_direct_message: true,
+                        // DM-only platform: every message is inherently
+                        // addressed to the bot.
+                        addressed_to_bot: true,
                         metadata: Value::Null,
                     });
                     continue;
@@ -142,6 +145,9 @@ impl TransportAdapter for MessengerTransport {
                         raw_payload: event.clone(),
                         turn_id: ConversationTurnId::new(),
                         is_direct_message: true,
+                        // DM-only platform: every message is inherently
+                        // addressed to the bot.
+                        addressed_to_bot: true,
                         metadata: Value::Null,
                     });
                 }

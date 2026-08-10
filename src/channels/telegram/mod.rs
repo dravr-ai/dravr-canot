@@ -38,11 +38,22 @@ pub struct TelegramChannel {
 }
 
 impl TelegramChannel {
-    /// Create a new Telegram channel adapter
+    /// Create a new Telegram channel adapter without bot identity
+    /// (bot-addressing detection disabled).
     #[must_use]
     pub fn new(webhook_secret: String) -> Self {
         Self {
             transport: TelegramTransport::new(webhook_secret),
+            renderer: TelegramRenderer,
+        }
+    }
+
+    /// Create an adapter that detects bot-addressed messages: the bot id is
+    /// derived from the token prefix, the username lazily via `getMe`.
+    #[must_use]
+    pub fn with_bot_token(webhook_secret: String, bot_token: Option<String>) -> Self {
+        Self {
+            transport: TelegramTransport::with_bot_token(webhook_secret, bot_token),
             renderer: TelegramRenderer,
         }
     }

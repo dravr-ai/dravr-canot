@@ -49,7 +49,15 @@ pub fn create_adapter_from_config(
         #[cfg(feature = "channel-telegram")]
         ChannelType::Telegram => {
             let secret = extract_string(config, "webhook_secret", "telegram")?;
-            Ok(Arc::new(TelegramChannel::new(secret)))
+            // The bot token (when present) enables bot-addressing detection:
+            // the numeric bot id comes from the token prefix, the username
+            // from a lazily-cached getMe call.
+            let bot_token = config
+                .get("bot_token")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+                .map(str::to_owned);
+            Ok(Arc::new(TelegramChannel::with_bot_token(secret, bot_token)))
         }
         #[cfg(feature = "channel-discord")]
         ChannelType::Discord => {

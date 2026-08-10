@@ -187,6 +187,12 @@ impl TransportAdapter for SlackTransport {
         // "mpim" for multi-party DMs. Only "im" is a true 1:1.
         let is_direct_message = event.get("channel_type").and_then(Value::as_str) == Some("im");
 
+        // A DM is inherently addressed to the bot; a channel message counts
+        // only when the raw text mentions one of the app's authorized bot
+        // users. Detection runs on the pre-strip text because Slack encodes
+        // mentions unambiguously as `<@U…>` there.
+        let addressed_to_bot = is_direct_message || event_mentions_bot(&payload, raw_text);
+
         Ok(vec![IncomingMessage {
             channel_type: ChannelType::Slack,
             sender_id: user_id.to_owned(),
@@ -202,6 +208,7 @@ impl TransportAdapter for SlackTransport {
             raw_payload: payload,
             turn_id: ConversationTurnId::new(),
             is_direct_message,
+            addressed_to_bot,
             metadata: Value::Null,
         }])
     }
@@ -454,10 +461,32 @@ fn parse_block_actions(payload: &Value) -> Vec<IncomingMessage> {
                 raw_payload: payload.clone(),
                 turn_id: ConversationTurnId::new(),
                 is_direct_message,
+                // Tapping the bot's own block element is an explicit
+                // interaction with the bot regardless of the channel kind.
+                addressed_to_bot: true,
                 metadata: Value::Null,
             })
         })
         .collect()
+}
+
+/// `true` when the raw (pre-strip) event text mentions one of the bot users
+/// this event was delivered for.
+///
+/// The Events API payload root carries `authorizations[]` — the app
+/// installations this event is delivered to — whose `user_id` is the app's
+/// bot user id. Slack encodes mentions unambiguously as `<@U…>` in the raw
+/// text, so a literal token search cannot false-positive on message prose.
+fn event_mentions_bot(payload: &Value, raw_text: &str) -> bool {
+    payload
+        .get("authorizations")
+        .and_then(Value::as_array)
+        .is_some_and(|auths| {
+            auths
+                .iter()
+                .filter_map(|auth| auth.get("user_id").and_then(Value::as_str))
+                .any(|bot_user_id| raw_text.contains(&format!("<@{bot_user_id}>")))
+        })
 }
 
 /// Strip Slack's mrkdwn auto-formatting from message text

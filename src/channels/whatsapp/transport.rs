@@ -112,6 +112,9 @@ impl TransportAdapter for WhatsAppTransport {
                         // messages to webhooks; group chats are excluded by the
                         // Meta product policy.
                         is_direct_message: true,
+                        // DM-only platform: every message is inherently
+                        // addressed to the bot.
+                        addressed_to_bot: true,
                         metadata: Value::Null,
                     });
                 }

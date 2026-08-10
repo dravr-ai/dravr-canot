@@ -161,6 +161,7 @@ pub fn sample_incoming(
         raw_payload: json!({}),
         turn_id: ConversationTurnId::new(),
         is_direct_message: false,
+        addressed_to_bot: false,
         metadata: json!({}),
     }
 }

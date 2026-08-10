@@ -483,6 +483,26 @@ fn parse_message_create(data: &Value, bot_user_id: Option<&str>) -> Option<Incom
     // types 1=DM, 3=GROUP_DM). Guild-scoped messages always include guild_id.
     let is_direct_message = data.get("guild_id").is_none_or(Value::is_null);
 
+    // A DM is inherently addressed to the bot; a guild message counts only
+    // when the bot user appears in `mentions[]` (covers @-mentions and, when
+    // reply pings are on, replies) or authored the `referenced_message` of a
+    // reply.
+    let addressed_to_bot = is_direct_message
+        || bot_user_id.is_some_and(|bot_id| {
+            let mentioned = data.get("mentions").and_then(Value::as_array).is_some_and(
+                |mentions| {
+                    mentions
+                        .iter()
+                        .any(|m| m.get("id").and_then(Value::as_str) == Some(bot_id))
+                },
+            );
+            mentioned
+                || data
+                    .pointer("/referenced_message/author/id")
+                    .and_then(Value::as_str)
+                    == Some(bot_id)
+        });
+
     Some(IncomingMessage {
         channel_type: ChannelType::Discord,
         sender_id: author_id.to_owned(),
@@ -501,6 +521,7 @@ fn parse_message_create(data: &Value, bot_user_id: Option<&str>) -> Option<Incom
         raw_payload: data.clone(),
         turn_id: ConversationTurnId::new(),
         is_direct_message,
+        addressed_to_bot,
         metadata: Value::Null,
     })
 }
@@ -602,6 +623,76 @@ mod tests {
         });
         let msg = parse_message_create(&data, None).expect("user message"); // Safe: test payload is well-formed
         assert!(msg.is_direct_message);
+    }
+
+    #[test]
+    fn guild_message_mentioning_bot_is_addressed() {
+        let data = json!({
+            "id": "msg-4",
+            "channel_id": "ch-guild",
+            "guild_id": "guild-7",
+            "content": "<@bot-id-123> how is my training load?",
+            "mentions": [{"id": "bot-id-123", "username": "Dravr"}],
+            "author": {"id": "user-1", "username": "Chef"}
+        });
+        let msg = parse_message_create(&data, Some("bot-id-123")).expect("user message"); // Safe: test payload is well-formed
+        assert!(msg.addressed_to_bot);
+    }
+
+    #[test]
+    fn guild_reply_to_bot_message_is_addressed() {
+        let data = json!({
+            "id": "msg-5",
+            "channel_id": "ch-guild",
+            "guild_id": "guild-7",
+            "content": "tell me more",
+            "referenced_message": {
+                "id": "msg-1",
+                "author": {"id": "bot-id-123", "username": "Dravr", "bot": true}
+            },
+            "author": {"id": "user-1", "username": "Chef"}
+        });
+        let msg = parse_message_create(&data, Some("bot-id-123")).expect("user message"); // Safe: test payload is well-formed
+        assert!(msg.addressed_to_bot);
+    }
+
+    #[test]
+    fn guild_message_mentioning_other_user_is_not_addressed() {
+        let data = json!({
+            "id": "msg-6",
+            "channel_id": "ch-guild",
+            "guild_id": "guild-7",
+            "content": "<@user-2> nice pace!",
+            "mentions": [{"id": "user-2", "username": "Phil"}],
+            "author": {"id": "user-1", "username": "Chef"}
+        });
+        let msg = parse_message_create(&data, Some("bot-id-123")).expect("user message"); // Safe: test payload is well-formed
+        assert!(!msg.addressed_to_bot);
+    }
+
+    #[test]
+    fn dm_message_is_inherently_addressed() {
+        let data = json!({
+            "id": "msg-7",
+            "channel_id": "ch-dm",
+            "content": "how was my week?",
+            "author": {"id": "user-1", "username": "Chef"}
+        });
+        let msg = parse_message_create(&data, Some("bot-id-123")).expect("user message"); // Safe: test payload is well-formed
+        assert!(msg.addressed_to_bot);
+    }
+
+    #[test]
+    fn guild_plain_message_without_bot_identity_is_not_addressed() {
+        let data = json!({
+            "id": "msg-8",
+            "channel_id": "ch-guild",
+            "guild_id": "guild-7",
+            "content": "great session everyone",
+            "author": {"id": "user-1", "username": "Chef"}
+        });
+        let msg = parse_message_create(&data, None).expect("user message"); // Safe: test payload is well-formed
+        assert!(!msg.addressed_to_bot);
     }
 
     #[test]

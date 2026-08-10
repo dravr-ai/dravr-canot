@@ -208,6 +208,9 @@ impl TransportAdapter for DiscordTransport {
             raw_payload: payload,
             turn_id: ConversationTurnId::new(),
             is_direct_message,
+            // Interactions (slash commands, component taps) are explicit
+            // invocations of the bot regardless of the channel kind.
+            addressed_to_bot: true,
             metadata: Value::Null,
         };
 

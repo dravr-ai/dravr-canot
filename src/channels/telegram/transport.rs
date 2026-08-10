@@ -12,6 +12,8 @@ use async_trait::async_trait;
 use chrono::Utc;
 use http::HeaderMap;
 use serde_json::Value;
+use std::collections::HashMap;
+use std::sync::{LazyLock, Mutex};
 use tracing::{debug, info, trace, warn};
 use uuid::Uuid;
 
@@ -19,6 +21,15 @@ use crate::http_client::api_client;
 
 use crate::transport::TransportAdapter;
 use crate::turn::ConversationTurnId;
+
+/// Process-wide cache of resolved bot usernames, keyed by bot id.
+///
+/// Telegram exposes the bot's username only via `getMe`; the username is
+/// stable for the lifetime of a bot token, so one successful resolution per
+/// process serves every subsequent webhook. Transports are constructed
+/// per-request, which is why the cache is a static rather than a field.
+static BOT_USERNAMES: LazyLock<Mutex<HashMap<i64, String>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Telegram Bot API transport adapter
 ///
@@ -29,17 +40,158 @@ pub struct TelegramTransport {
     client: &'static reqwest::Client,
     /// Expected secret token for webhook verification
     webhook_secret: String,
+    /// Numeric bot user id, derived from the `bot_token` prefix (the part
+    /// before `:`). `None` when the transport was built without a token,
+    /// which disables bot-addressing detection (every group message parses
+    /// with `addressed_to_bot: false`).
+    bot_id: Option<i64>,
+    /// Bot API token used to lazily resolve the bot's username via `getMe`
+    /// for @-mention matching. `None` disables username resolution.
+    bot_token: Option<String>,
 }
 
 impl TelegramTransport {
-    /// Create a transport with the given webhook secret
+    /// Create a transport with the given webhook secret and no bot identity
+    /// (bot-addressing detection disabled).
     #[must_use]
     pub fn new(webhook_secret: String) -> Self {
         Self {
             client: api_client(),
             webhook_secret,
+            bot_id: None,
+            bot_token: None,
         }
     }
+
+    /// Create a transport that can detect bot-addressed messages. The bot id
+    /// is derived from the token's numeric prefix; the username is resolved
+    /// lazily via `getMe` and cached process-wide.
+    #[must_use]
+    pub fn with_bot_token(webhook_secret: String, bot_token: Option<String>) -> Self {
+        Self {
+            client: api_client(),
+            webhook_secret,
+            bot_id: bot_token.as_deref().and_then(bot_id_from_token),
+            bot_token,
+        }
+    }
+
+    /// Create a transport with a fully known bot identity, seeding the
+    /// username cache so no `getMe` call is ever made. Used by tests and by
+    /// callers that already resolved the identity.
+    #[must_use]
+    pub fn with_bot_identity(webhook_secret: String, bot_id: i64, bot_username: &str) -> Self {
+        if let Ok(mut cache) = BOT_USERNAMES.lock() {
+            cache.insert(bot_id, bot_username.to_owned());
+        }
+        Self {
+            client: api_client(),
+            webhook_secret,
+            bot_id: Some(bot_id),
+            bot_token: None,
+        }
+    }
+
+    /// Resolve the bot's username, from the process-wide cache when warm,
+    /// otherwise via one `getMe` call. Returns `None` (and logs at debug)
+    /// when no token is configured or the call fails — mention detection
+    /// then degrades to reply/`text_mention` signals for this message.
+    async fn bot_username(&self) -> Option<String> {
+        let bot_id = self.bot_id?;
+        if let Some(cached) = BOT_USERNAMES
+            .lock()
+            .ok()
+            .and_then(|cache| cache.get(&bot_id).cloned())
+        {
+            return Some(cached);
+        }
+        let bot_token = self.bot_token.as_deref()?;
+        let url = format!("https://api.telegram.org/bot{bot_token}/getMe");
+        let response = match self.client.get(&url).send().await {
+            Ok(r) => r,
+            Err(e) => {
+                debug!(error = %e, "telegram getMe failed; @-mention detection degraded for this message");
+                return None;
+            }
+        };
+        let body: Value = response.json().await.ok()?;
+        let username = body
+            .pointer("/result/username")
+            .and_then(Value::as_str)
+            .map(str::to_owned)?;
+        if let Ok(mut cache) = BOT_USERNAMES.lock() {
+            cache.insert(bot_id, username.clone());
+        }
+        info!(bot_id, "telegram bot username resolved via getMe");
+        Some(username)
+    }
+
+    /// `true` when a group message explicitly addresses this bot: a reply to
+    /// one of the bot's own messages, a `text_mention` entity naming the bot
+    /// user, or an `@username` mention in the text or media caption.
+    async fn message_addresses_bot(&self, message: &Value) -> bool {
+        let Some(bot_id) = self.bot_id else {
+            return false;
+        };
+        if message
+            .pointer("/reply_to_message/from/id")
+            .and_then(Value::as_i64)
+            == Some(bot_id)
+        {
+            return true;
+        }
+        // `text_mention` entities (mentions of users without a username)
+        // carry the mentioned user object directly — no text slicing needed.
+        for entities_key in ["entities", "caption_entities"] {
+            if let Some(entities) = message.get(entities_key).and_then(Value::as_array) {
+                if entities.iter().any(|e| {
+                    e.get("type").and_then(Value::as_str) == Some("text_mention")
+                        && e.pointer("/user/id").and_then(Value::as_i64) == Some(bot_id)
+                }) {
+                    return true;
+                }
+            }
+        }
+        // `@username` mentions (and `/command@username` targeting) appear
+        // verbatim in the text/caption, so a boundary-checked search avoids
+        // decoding entity offsets (which Telegram counts in UTF-16 units).
+        let Some(username) = self.bot_username().await else {
+            return false;
+        };
+        ["text", "caption"].iter().any(|key| {
+            message
+                .get(*key)
+                .and_then(Value::as_str)
+                .is_some_and(|text| text_mentions_username(text, &username))
+        })
+    }
+}
+
+/// Derive the numeric bot id from a Bot API token (`<bot_id>:<secret>`).
+fn bot_id_from_token(token: &str) -> Option<i64> {
+    token.split(':').next()?.parse().ok()
+}
+
+/// Case-insensitive search for `@username` in `text`, requiring a word
+/// boundary after the match so `@mybot` does not fire inside `@mybotfan`.
+/// Telegram usernames are ASCII (`[A-Za-z0-9_]{5,32}`), so ASCII-lowercase
+/// comparison is sufficient.
+fn text_mentions_username(text: &str, username: &str) -> bool {
+    let needle = format!("@{}", username.to_ascii_lowercase());
+    let haystack = text.to_ascii_lowercase();
+    let mut search_from = 0;
+    while let Some(pos) = haystack[search_from..].find(&needle) {
+        let end = search_from + pos + needle.len();
+        let boundary = haystack[end..]
+            .chars()
+            .next()
+            .is_none_or(|c| !c.is_ascii_alphanumeric() && c != '_');
+        if boundary {
+            return true;
+        }
+        search_from = end;
+    }
+    false
 }
 
 #[async_trait]
@@ -151,6 +303,10 @@ impl TransportAdapter for TelegramTransport {
             },
         );
 
+        // A DM is inherently addressed to the bot; a group message counts
+        // only when it mentions the bot or replies to one of its messages.
+        let addressed_to_bot = is_direct_message || self.message_addresses_bot(message).await;
+
         // Extract forum topic thread ID for groups with Topics enabled
         let metadata = message
             .get("message_thread_id")
@@ -172,6 +328,7 @@ impl TransportAdapter for TelegramTransport {
             raw_payload: update,
             turn_id: ConversationTurnId::new(),
             is_direct_message,
+            addressed_to_bot,
             metadata,
         };
 
@@ -180,6 +337,7 @@ impl TransportAdapter for TelegramTransport {
             chat_id,
             message_id,
             is_direct_message,
+            addressed_to_bot,
             content_kind = match &incoming.content {
                 MessageContent::Text { .. } => "text",
                 _ => "non_text",
@@ -423,6 +581,9 @@ fn parse_callback_query(callback: &Value, update: &Value) -> Vec<IncomingMessage
         raw_payload: update.clone(),
         turn_id: ConversationTurnId::new(),
         is_direct_message,
+        // Tapping the bot's own inline keyboard is an explicit interaction
+        // with the bot regardless of the chat kind.
+        addressed_to_bot: true,
         metadata,
     };
 
@@ -562,5 +723,32 @@ mod tests {
             chat_id_to_value("@dravrchannel"),
             Value::from("@dravrchannel")
         );
+    }
+
+    #[test]
+    fn bot_id_derives_from_token_prefix() {
+        assert_eq!(
+            super::bot_id_from_token("123456789:AAFakeSecretPart"),
+            Some(123_456_789)
+        );
+        assert_eq!(super::bot_id_from_token("not-a-token"), None);
+        assert_eq!(super::bot_id_from_token(""), None);
+    }
+
+    #[test]
+    fn username_mention_requires_word_boundary() {
+        use super::text_mentions_username;
+        assert!(text_mentions_username("@dravr_bot hello", "dravr_bot"));
+        assert!(text_mentions_username("hey @Dravr_Bot!", "dravr_bot"));
+        assert!(text_mentions_username("ping @dravr_bot", "dravr_bot"));
+        assert!(text_mentions_username("/status@dravr_bot", "dravr_bot"));
+        // A longer username containing ours must not match…
+        assert!(!text_mentions_username("cc @dravr_botfan", "dravr_bot"));
+        // …but a real mention after a false prefix still must.
+        assert!(text_mentions_username(
+            "cc @dravr_botfan and @dravr_bot",
+            "dravr_bot"
+        ));
+        assert!(!text_mentions_username("no mention here", "dravr_bot"));
     }
 }
