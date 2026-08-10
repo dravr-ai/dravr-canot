@@ -489,13 +489,14 @@ fn parse_message_create(data: &Value, bot_user_id: Option<&str>) -> Option<Incom
     // reply.
     let addressed_to_bot = is_direct_message
         || bot_user_id.is_some_and(|bot_id| {
-            let mentioned = data.get("mentions").and_then(Value::as_array).is_some_and(
-                |mentions| {
-                    mentions
-                        .iter()
-                        .any(|m| m.get("id").and_then(Value::as_str) == Some(bot_id))
-                },
-            );
+            let mentioned =
+                data.get("mentions")
+                    .and_then(Value::as_array)
+                    .is_some_and(|mentions| {
+                        mentions
+                            .iter()
+                            .any(|m| m.get("id").and_then(Value::as_str) == Some(bot_id))
+                    });
             mentioned
                 || data
                     .pointer("/referenced_message/author/id")

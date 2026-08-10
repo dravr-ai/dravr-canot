@@ -72,12 +72,24 @@ async fn telegram_group_plain_text_is_not_addressed() {
 
 #[tokio::test]
 async fn telegram_group_username_mention_is_addressed() {
-    assert!(tg_parse(&tg_transport(), &tg_group_text("@dravr_test_bot how am I doing?")).await);
+    assert!(
+        tg_parse(
+            &tg_transport(),
+            &tg_group_text("@dravr_test_bot how am I doing?")
+        )
+        .await
+    );
 }
 
 #[tokio::test]
 async fn telegram_mention_matching_is_case_insensitive() {
-    assert!(tg_parse(&tg_transport(), &tg_group_text("hey @Dravr_Test_Bot thoughts?")).await);
+    assert!(
+        tg_parse(
+            &tg_transport(),
+            &tg_group_text("hey @Dravr_Test_Bot thoughts?")
+        )
+        .await
+    );
 }
 
 #[tokio::test]
