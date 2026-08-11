@@ -119,7 +119,7 @@ subtle = "2.6"
 hex = "0.4"
 html-escape = "0.2"
 tracing = "0.1"
-uuid = { version = "1.22", features = ["v4", "serde"] }
+uuid = { version = "1.23", features = ["v4", "serde"] }
 thiserror = "2"
 
 # Discord Ed25519 signature verification
