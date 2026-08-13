@@ -11,7 +11,7 @@ use crate::models::{
 use async_trait::async_trait;
 use chrono::Utc;
 use http::HeaderMap;
-use serde_json::Value;
+use serde_json::{json, Value};
 use uuid::Uuid;
 
 use tracing::{info, trace};
@@ -42,6 +42,46 @@ impl MessengerTransport {
             app_secret,
         }
     }
+}
+
+/// Build a message from an `m.me` deep-link referral, if this event is one.
+///
+/// A link of the form `m.me/{page}?ref={code}` arrives as a bare `referral` when
+/// the person has never messaged the page, and nested under `postback.referral`
+/// when they land on Get Started instead. Both carry the same `ref`, and both
+/// have to work — otherwise linking succeeds for some users and silently fails
+/// for others depending on whether they had an existing thread.
+///
+/// Without this the event is indistinguishable from someone saying hello, which
+/// is what made Messenger un-linkable: the code never reached the consumer.
+fn referral_message(event: &Value, sender_id: &str) -> Option<IncomingMessage> {
+    let code = event
+        .get("referral")
+        .or_else(|| event.get("postback").and_then(|p| p.get("referral")))
+        .and_then(|r| r.get("ref"))
+        .and_then(Value::as_str)
+        .filter(|r| !r.is_empty())?;
+
+    Some(IncomingMessage {
+        channel_type: ChannelType::Messenger,
+        sender_id: sender_id.to_owned(),
+        sender_name: None,
+        // Surfaced as the body so a consumer's existing link-code detection sees
+        // it with no Messenger-specific handling — the same shape Telegram's
+        // `?start=` payload arrives in.
+        content: MessageContent::Text {
+            body: code.to_owned(),
+        },
+        conversation_id: Some(sender_id.to_owned()),
+        chat_title: None,
+        channel_message_id: String::new(),
+        timestamp: Utc::now(),
+        raw_payload: event.clone(),
+        turn_id: ConversationTurnId::new(),
+        is_direct_message: true,
+        addressed_to_bot: true,
+        metadata: json!({ "referral_ref": code }),
+    })
 }
 
 #[async_trait]
@@ -118,6 +158,11 @@ impl TransportAdapter for MessengerTransport {
                         addressed_to_bot: true,
                         metadata: Value::Null,
                     });
+                    continue;
+                }
+
+                if let Some(message) = referral_message(event, sender_id) {
+                    messages.push(message);
                     continue;
                 }
 

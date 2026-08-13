@@ -71,12 +71,16 @@ fn channel_type_linking_methods() {
         ChannelType::WhatsApp.linking_method(),
         LinkingMethod::DeepLink
     );
-    assert_eq!(ChannelType::Slack.linking_method(), LinkingMethod::OAuth);
-    assert_eq!(ChannelType::Discord.linking_method(), LinkingMethod::OAuth);
+    // Messenger is a deep-link channel too: m.me/{page}?ref={code}, whose `ref`
+    // comes back on the webhook the way Telegram's `?start=` does. It was
+    // classified as OAuth, which produced a linking URL no consumer could
+    // complete.
     assert_eq!(
         ChannelType::Messenger.linking_method(),
-        LinkingMethod::OAuth
+        LinkingMethod::DeepLink
     );
+    assert_eq!(ChannelType::Slack.linking_method(), LinkingMethod::OAuth);
+    assert_eq!(ChannelType::Discord.linking_method(), LinkingMethod::OAuth);
 }
 
 #[test]

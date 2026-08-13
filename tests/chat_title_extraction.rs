@@ -23,6 +23,7 @@ use dravr_canot::channels::messenger::transport::MessengerTransport;
 use dravr_canot::channels::slack::transport::SlackTransport;
 use dravr_canot::channels::telegram::transport::TelegramTransport;
 use dravr_canot::channels::whatsapp::transport::WhatsAppTransport;
+use dravr_canot::models::MessageContent;
 use dravr_canot::transport::TransportAdapter;
 use http::HeaderMap;
 use serde_json::{json, Value};
@@ -217,4 +218,73 @@ async fn messenger_dm_has_no_chat_title() {
         .unwrap_or_else(|e| panic!("parse_inbound: {e}"));
     assert_eq!(messages.len(), 1);
     assert!(messages[0].chat_title.is_none());
+}
+
+/// An `m.me/{page}?ref={code}` deep link must surface its code.
+///
+/// This is how Messenger does account linking, and it arrives as a bare
+/// `referral` when the person has never messaged the page. Until this was
+/// parsed, the event was indistinguishable from someone saying hello, so the
+/// code never reached the consumer and Messenger could not be linked at all.
+#[tokio::test]
+async fn messenger_referral_deep_link_surfaces_its_code() {
+    let payload = json!({
+        "object": "page",
+        "entry": [{"messaging": [{
+            "sender": {"id": "psid-1"},
+            "recipient": {"id": "page-1"},
+            "timestamp": 1_700_000_000_000_i64,
+            "referral": {"ref": "LINKCODE123", "source": "SHORTLINK", "type": "OPEN_THREAD"},
+        }]}]
+    });
+    let transport = MessengerTransport::new("app-secret".to_owned());
+    let messages = transport
+        .parse_inbound(&HeaderMap::new(), &to_bytes(&payload))
+        .await
+        .unwrap_or_else(|e| panic!("parse_inbound: {e}"));
+
+    assert_eq!(messages.len(), 1, "a referral must produce one message");
+    match &messages[0].content {
+        MessageContent::Text { body } => assert_eq!(
+            body, "LINKCODE123",
+            "the ref must be surfaced as the body so existing link-code detection sees it"
+        ),
+        other => panic!("expected text content, got {other:?}"),
+    }
+    assert_eq!(messages[0].sender_id, "psid-1");
+}
+
+/// The same code also arrives nested under `postback.referral` when the person
+/// lands on Get Started rather than straight into a thread. Both paths must
+/// work or linking succeeds for some users and silently fails for others.
+#[tokio::test]
+async fn messenger_get_started_referral_also_surfaces_its_code() {
+    let payload = json!({
+        "object": "page",
+        "entry": [{"messaging": [{
+            "sender": {"id": "psid-2"},
+            "recipient": {"id": "page-1"},
+            "timestamp": 1_700_000_000_000_i64,
+            "postback": {
+                "mid": "m_2",
+                "title": "Get Started",
+                "payload": "GET_STARTED",
+                "referral": {"ref": "LINKCODE456", "source": "SHORTLINK", "type": "OPEN_THREAD"},
+            },
+        }]}]
+    });
+    let transport = MessengerTransport::new("app-secret".to_owned());
+    let messages = transport
+        .parse_inbound(&HeaderMap::new(), &to_bytes(&payload))
+        .await
+        .unwrap_or_else(|e| panic!("parse_inbound: {e}"));
+
+    assert_eq!(messages.len(), 1);
+    match &messages[0].content {
+        MessageContent::Text { body } => assert_eq!(
+            body, "LINKCODE456",
+            "the Get Started referral must surface the code, not the GET_STARTED payload"
+        ),
+        other => panic!("expected text content, got {other:?}"),
+    }
 }

@@ -60,8 +60,14 @@ impl ChannelType {
     #[must_use]
     pub const fn linking_method(self) -> LinkingMethod {
         match self {
-            Self::Telegram | Self::WhatsApp => LinkingMethod::DeepLink,
-            Self::Slack | Self::Discord | Self::Messenger => LinkingMethod::OAuth,
+            // Messenger belongs here, not with the OAuth channels: its native
+            // account-linking primitive is the m.me deep link, whose `ref`
+            // comes back on the webhook exactly as Telegram's `?start=` does.
+            // Classifying it as OAuth produced a linking URL that pointed at the
+            // consumer's own callback with no way to supply the channel user id,
+            // so every Messenger link attempt failed.
+            Self::Telegram | Self::WhatsApp | Self::Messenger => LinkingMethod::DeepLink,
+            Self::Slack | Self::Discord => LinkingMethod::OAuth,
         }
     }
 }
