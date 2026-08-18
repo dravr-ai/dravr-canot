@@ -95,6 +95,47 @@ impl TelegramTransport {
     /// Resolve the bot's username, from the process-wide cache when warm,
     /// otherwise via one `getMe` call. Returns `None` (and logs at debug)
     /// when no token is configured or the call fails — mention detection
+    /// Acknowledge a tapped inline-keyboard button.
+    ///
+    /// Telegram spins a progress indicator on the button until the bot calls
+    /// `answerCallbackQuery`, and if the call never comes the user is shown
+    /// nothing — a tap that was processed perfectly still reads as broken. The
+    /// coach picker surfaced this: selections landed while the athlete saw no
+    /// response.
+    ///
+    /// Best-effort by design. The callback has already been parsed into a
+    /// message by the time this runs, so a failed acknowledgement costs a
+    /// spinner, never the selection.
+    async fn answer_callback_query(&self, callback: &Value) {
+        let Some(bot_token) = self.bot_token.as_deref() else {
+            debug!("telegram callback not acknowledged: no bot token configured");
+            return;
+        };
+        let Some(callback_id) = callback.get("id").and_then(Value::as_str) else {
+            debug!("telegram callback carries no id; nothing to acknowledge");
+            return;
+        };
+
+        let url = format!("https://api.telegram.org/bot{bot_token}/answerCallbackQuery");
+        match self
+            .client
+            .post(&url)
+            .json(&serde_json::json!({ "callback_query_id": callback_id }))
+            .send()
+            .await
+        {
+            Ok(response) if response.status().is_success() => {
+                debug!("telegram callback acknowledged");
+            }
+            Ok(response) => {
+                warn!(status = %response.status(), "telegram answerCallbackQuery rejected");
+            }
+            Err(e) => {
+                warn!(error = %e, "telegram answerCallbackQuery failed; the button will spin");
+            }
+        }
+    }
+
     /// then degrades to reply/`text_mention` signals for this message.
     async fn bot_username(&self) -> Option<String> {
         let bot_id = self.bot_id?;
@@ -245,6 +286,17 @@ impl TransportAdapter for TelegramTransport {
 
         // Telegram sends one Update per webhook — check for callback_query first (button taps)
         if let Some(callback) = update.get("callback_query") {
+            // Acknowledge before returning. Telegram keeps a progress indicator
+            // spinning on the tapped button until the bot answers, and shows the
+            // user nothing at all if it never does — so a tap that IS processed
+            // still reads as a dead button. That was the reported symptom for the
+            // coach picker: the selection landed server-side while the athlete saw
+            // no response and reasonably concluded it was broken.
+            //
+            // Deliberately best-effort and non-blocking on failure: the message it
+            // acknowledges has already been parsed, and losing the acknowledgement
+            // must not lose the selection.
+            self.answer_callback_query(callback).await;
             return Ok(parse_callback_query(callback, &update));
         }
 
