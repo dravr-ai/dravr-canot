@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.21] — 2026-08-18
+
+### Fixed
+
+- fix(telegram): acknowledge a tapped button so it does not look dead
+- fix(deps): bump quinn-proto past the memory-exhaustion advisory
+- fix: repair the SessionStart bootstrap guard for an empty .build
+
+
+
 ## [0.4.18] — 2026-06-19
 
 ### Changed
