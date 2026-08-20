@@ -164,6 +164,19 @@ impl TransportAdapter for SlackTransport {
             return Ok(vec![]);
         }
 
+        // An edit or a tombstone is not new user input. Slack nests the
+        // original author under `message` for these, leaving the envelope with
+        // no top-level `bot_id` and no `user` — so the bot-loop guard below
+        // sees neither and the edit reads as a message from an unknown human.
+        // AG-UI status streaming edits the coach's own reply via `chat.update`,
+        // which means every coach turn emitted one of these back at the
+        // pipeline and started an account-linking flow against itself.
+        let subtype = event.get("subtype").and_then(Value::as_str).unwrap_or("");
+        if matches!(subtype, "message_changed" | "message_deleted") {
+            debug!(subtype, "Ignoring Slack message edit/delete event");
+            return Ok(vec![]);
+        }
+
         // Skip bot messages to avoid loops. Allow-listed bot IDs (e.g. QA
         // drivers, trusted third-party integrations) are treated as real
         // user input.

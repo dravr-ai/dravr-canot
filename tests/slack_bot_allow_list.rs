@@ -117,3 +117,107 @@ async fn human_message_always_passes_regardless_of_list() {
         );
     }
 }
+
+/// A verbatim `message_changed` envelope as Slack delivers it.
+///
+/// The author fields live under `message`, never at the top level — that shape
+/// is the whole point of the regression below.
+fn slack_message_changed_event(bot_id: &str, text: &str) -> Value {
+    json!({
+        "type": "event_callback",
+        "event": {
+            "type": "message",
+            "subtype": "message_changed",
+            "channel": "C123",
+            "channel_type": "channel",
+            "ts": "1700000000.000500",
+            "message": {
+                "type": "message",
+                "user": "U999",
+                "bot_id": bot_id,
+                "app_id": "A0AMJFX0PAQ",
+                "text": text,
+                "ts": "1700000000.000400",
+                "edited": { "user": "U999", "ts": "1700000000.000500" },
+            },
+        }
+    })
+}
+
+fn slack_message_deleted_event() -> Value {
+    json!({
+        "type": "event_callback",
+        "event": {
+            "type": "message",
+            "subtype": "message_deleted",
+            "channel": "C123",
+            "channel_type": "channel",
+            "ts": "1700000000.000700",
+            "deleted_ts": "1700000000.000400",
+            "previous_message": {
+                "type": "message",
+                "user": "U999",
+                "bot_id": "B_COACH",
+                "text": "gone",
+                "ts": "1700000000.000400",
+            },
+        }
+    })
+}
+
+/// AG-UI status streaming edits the coach's own reply through `chat.update`,
+/// and Slack echoes each edit back as `message_changed`. Because Slack nests
+/// the author under `message`, the envelope carries no top-level `bot_id` and
+/// no top-level `user`: the bot-loop guard matched nothing and the edit parsed
+/// as a message from sender `"unknown"`. Observed live on 2026-08-20 — every
+/// coach turn in #qa-automation started an account-linking OTP flow against the
+/// coach's own status update, burying the real reply.
+#[tokio::test]
+async fn coach_own_edit_is_not_ingested_as_a_new_message() {
+    for list in [vec![], vec!["B_QA_DRIVER".to_owned()]] {
+        let transport = SlackTransport::with_allowed_bot_ids("secret".to_owned(), list.clone());
+        let messages = transport
+            .parse_inbound(
+                &HeaderMap::new(),
+                &to_bytes(&slack_message_changed_event("B_COACH", "status update")),
+            )
+            .await
+            .unwrap_or_else(|e| panic!("parse_inbound: {e}"));
+        assert!(
+            messages.is_empty(),
+            "message_changed must never parse into user input (list={list:?}); got {messages:?}"
+        );
+    }
+}
+
+/// An allow-listed bot editing a message is still an edit, not new input —
+/// otherwise the QA driver's own edits would replay as fresh questions.
+#[tokio::test]
+async fn allowed_bot_edit_is_still_dropped() {
+    let transport =
+        SlackTransport::with_allowed_bot_ids("secret".to_owned(), vec!["B_QA_DRIVER".to_owned()]);
+    let messages = transport
+        .parse_inbound(
+            &HeaderMap::new(),
+            &to_bytes(&slack_message_changed_event("B_QA_DRIVER", "edited probe")),
+        )
+        .await
+        .unwrap_or_else(|e| panic!("parse_inbound: {e}"));
+    assert!(
+        messages.is_empty(),
+        "an allow-listed bot's edit is still an edit; got {messages:?}"
+    );
+}
+
+#[tokio::test]
+async fn message_deleted_is_not_ingested() {
+    let transport = SlackTransport::new("secret".to_owned());
+    let messages = transport
+        .parse_inbound(&HeaderMap::new(), &to_bytes(&slack_message_deleted_event()))
+        .await
+        .unwrap_or_else(|e| panic!("parse_inbound: {e}"));
+    assert!(
+        messages.is_empty(),
+        "message_deleted is a tombstone, not user input; got {messages:?}"
+    );
+}
