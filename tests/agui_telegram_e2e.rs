@@ -1,5 +1,5 @@
-// ABOUTME: End-to-end test of AG-UI SSE consumption driving Telegram editMessageText updates
-// ABOUTME: Stands up mock SSE source and mock Telegram Bot API to assert status round-trips
+// ABOUTME: End-to-end test of in-process AG-UI event consumption driving Telegram editMessageText updates
+// ABOUTME: Replays a run's event broadcast into the status adapter against a mock Telegram Bot API
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright (c) 2026 dravr.ai
@@ -8,60 +8,22 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 #![allow(missing_docs)]
 
-use dravr_canot::agui_consumer::{AgUiConsumer, AgUiEvent};
+use dravr_canot::agui_consumer::AgUiEvent;
 use dravr_canot::agui_status::{status_text_for_event, StatusAdapter};
 use dravr_canot::channels::telegram::agui_status::TelegramStatusAdapter;
 use serde_json::{json, Value};
-use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tokio::net::TcpListener;
-use tokio::sync::mpsc;
+use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
-use tokio::time::timeout;
 
 /// Shared state for the mock Telegram Bot API server: every recorded
 /// `sendMessage` / `editMessageText` payload lands in `calls`.
 #[derive(Clone)]
 struct MockTelegramState {
     calls: Arc<Mutex<Vec<Value>>>,
-}
-
-/// Start a mock AG-UI SSE server that streams the given event
-/// payloads to a single subscriber, then closes the connection.
-async fn spawn_mock_sse_server(events: Vec<String>) -> (String, JoinHandle<()>) {
-    use axum::extract::Path;
-    use axum::response::sse::{Event, KeepAlive, Sse};
-    use axum::routing::get;
-    use axum::Router;
-    use futures_util::stream;
-
-    let events_arc = Arc::new(events);
-    let app = Router::new().route(
-        "/api/agui/runs/{run_id}/stream",
-        get({
-            let events = Arc::clone(&events_arc);
-            move |Path(_run_id): Path<String>| {
-                let events = Arc::clone(&events);
-                async move {
-                    let items: Vec<Result<Event, Infallible>> = events
-                        .iter()
-                        .map(|payload| Ok(Event::default().event("agui").data(payload.clone())))
-                        .collect();
-                    let s = stream::iter(items);
-                    Sse::new(s).keep_alive(KeepAlive::default())
-                }
-            }
-        }),
-    );
-
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
-    let port = listener.local_addr().expect("local addr").port();
-    let handle = tokio::spawn(async move {
-        axum::serve(listener, app).await.expect("serve");
-    });
-    (format!("http://127.0.0.1:{port}"), handle)
 }
 
 /// A mock Telegram Bot API server. Captures every `sendMessage` and
@@ -163,9 +125,9 @@ fn status_text_for_core_events() {
 
 /// Full cross-layer end-to-end:
 ///
-/// 1. Mock platform serves an AG-UI SSE run with a realistic event sequence.
+/// 1. A realistic AG-UI event sequence is replayed on the run broadcast.
 /// 2. Mock Telegram Bot API captures outbound HTTP calls.
-/// 3. `AgUiConsumer` subscribes to the SSE stream.
+/// 3. The in-process subscriber decodes each payload into an `AgUiEvent`.
 /// 4. For each event, the test renders status text and forwards it to
 ///    `TelegramStatusAdapter::set_status`, which issues `editMessageText`.
 /// 5. On `RUN_FINISHED`, the test calls `finalize("…assistant reply…")`
@@ -176,8 +138,8 @@ fn status_text_for_core_events() {
 /// with the assistant reply.
 #[tokio::test(flavor = "multi_thread")]
 async fn agui_to_telegram_end_to_end() {
-    // Event sequence the mock SSE server replays — the same shape the
-    // real pierre-server pipeline emits.
+    // Event sequence replayed on the run broadcast — the same shape
+    // the real pierre-server pipeline emits.
     let events = vec![
         payload(&json!({
             "type": "RUN_STARTED",
@@ -217,7 +179,6 @@ async fn agui_to_telegram_end_to_end() {
         })),
     ];
 
-    let (sse_base, sse_handle) = spawn_mock_sse_server(events).await;
     let (tg_base, tg_calls, tg_handle) = spawn_mock_telegram_api().await;
 
     // Seed a placeholder "thinking…" message via the mock Bot API so
@@ -237,35 +198,25 @@ async fn agui_to_telegram_end_to_end() {
     .with_edit_throttle(Duration::ZERO);
     assert_eq!(adapter.message_id(), 4242);
 
-    // Subscribe to the SSE stream. Forward every event into a channel
-    // so the test can drain them deterministically.
-    let consumer = AgUiConsumer::new(sse_base.parse().expect("sse base url"), "fake_bearer_token");
-    let (tx, mut rx) = mpsc::unbounded_channel::<AgUiEvent>();
-    let consumer_handle = tokio::spawn(async move {
-        let _ = consumer
-            .stream("run_xyz", |event| {
-                let tx = tx.clone();
-                async move {
-                    let _ = tx.send(event);
-                }
-            })
-            .await;
-    });
+    // Replay the run's events the way the platform hands them to the
+    // status bridge: serialized AG-UI payloads on the run's broadcast,
+    // decoded in-process by the subscriber. There is no HTTP hop —
+    // producer and status adapter live in the same process.
+    let (tx, mut rx) = broadcast::channel::<String>(16);
+    for event in events {
+        tx.send(event).expect("queue AG-UI event");
+    }
+    drop(tx);
 
-    // Drain events and push status updates through the adapter until
-    // we observe RUN_FINISHED.
     let mut saw_run_finished = false;
-    let drain_deadline = Duration::from_secs(3);
-    let start = Instant::now();
-    while start.elapsed() < drain_deadline {
-        if let Ok(Some(event)) = timeout(Duration::from_millis(100), rx.recv()).await {
-            if let Some(text) = status_text_for_event(&event) {
-                adapter.set_status(&text).await.expect("set_status");
-            }
-            if matches!(event, AgUiEvent::RunFinished { .. }) {
-                saw_run_finished = true;
-                break;
-            }
+    while let Ok(payload) = rx.recv().await {
+        let event: AgUiEvent = serde_json::from_str(&payload).expect("decode AG-UI event");
+        if let Some(text) = status_text_for_event(&event) {
+            adapter.set_status(&text).await.expect("set_status");
+        }
+        if matches!(event, AgUiEvent::RunFinished { .. }) {
+            saw_run_finished = true;
+            break;
         }
     }
     assert!(saw_run_finished, "never observed RUN_FINISHED");
@@ -276,9 +227,7 @@ async fn agui_to_telegram_end_to_end() {
         .await
         .expect("finalize");
 
-    // Stop background tasks.
-    consumer_handle.abort();
-    sse_handle.abort();
+    // Stop the mock Bot API server.
     tg_handle.abort();
 
     // Print the captured Telegram API trace. Run with `--nocapture`

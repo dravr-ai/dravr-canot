@@ -260,9 +260,9 @@ impl ChannelConfigStore for MyDatabase {
 
 ## AG-UI Progress Feedback (feature flag)
 
-Enable the `agui` feature to consume
-[AG-UI protocol](https://github.com/ag-ui-protocol/ag-ui) event streams —
-the canonical progress-feedback format used by
+Enable the `agui` feature to render
+[AG-UI protocol](https://github.com/ag-ui-protocol/ag-ui) events —
+the canonical progress-feedback format produced by
 [`dravr-platform`](https://github.com/dravr-ai/dravr-platform). Useful for
 rendering "the assistant is thinking…" status that updates in place as
 pipeline stages advance.
@@ -272,24 +272,19 @@ pipeline stages advance.
 dravr-canot = { version = "0.4", features = ["agui", "channel-telegram"] }
 ```
 
-**Subscribing to a run.** `AgUiConsumer` opens an HTTP SSE connection and
-invokes a callback per decoded event. Unknown event kinds route to
-`AgUiEvent::Unknown` so the consumer tolerates forward-compat events
-added to the AG-UI spec after the library is released.
+**Decoding events.** The platform hands each event to the host process
+as JSON on the run's broadcast; `AgUiEvent` is the wire schema it decodes
+into. Unknown event kinds route to `AgUiEvent::Unknown` so the decoder
+tolerates forward-compat events added to the AG-UI spec after the library
+is released.
 
 ```rust
-use dravr_canot::agui_consumer::{AgUiConsumer, AgUiEvent};
+use dravr_canot::agui_consumer::AgUiEvent;
 
-let consumer = AgUiConsumer::new(
-    "https://pierre.example.com".parse()?,
-    "platform_bearer_token",
-);
-
-consumer.stream("run_abc", |event| async move {
-    if let AgUiEvent::StepStarted { step_name, .. } = event {
-        eprintln!("→ {step_name}");
-    }
-}).await?;
+let event: AgUiEvent = serde_json::from_str(payload)?;
+if let AgUiEvent::StepStarted { step_name, .. } = &event {
+    eprintln!("→ {step_name}");
+}
 ```
 
 **Telegram integration.** `TelegramStatusAdapter` sends an initial
@@ -308,14 +303,12 @@ let adapter = TelegramStatusAdapter::open(
     "thinking…",
 ).await?;
 
-consumer.stream("run_abc", |event| {
-    let adapter = &adapter;
-    async move {
-        if let Some(text) = status_text_for_event(&event) {
-            let _ = adapter.set_status(&text).await;
-        }
+while let Ok(payload) = events.recv().await {
+    let event: AgUiEvent = serde_json::from_str(&payload)?;
+    if let Some(text) = status_text_for_event(&event) {
+        let _ = adapter.set_status(&text).await;
     }
-}).await?;
+}
 
 adapter.finalize("Your last run was 5 km at 4:30/km.").await?;
 ```

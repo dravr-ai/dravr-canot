@@ -7,9 +7,9 @@
 //! AG-UI progress rendering for messaging channels.
 //!
 //! Channel adapters (Telegram, Slack, Discord, ...) pick up
-//! [`AgUiEvent`](crate::agui_consumer::AgUiEvent)s from
-//! [`crate::agui_consumer::AgUiConsumer`] and render a single
-//! short "the assistant is doing X" status line per event.
+//! [`AgUiEvent`](crate::agui_consumer::AgUiEvent)s from the host's
+//! run subscriber and render a single short "the assistant is doing
+//! X" status line per event.
 //!
 //! The mapping from event → text lives in [`status_text_for_event`]
 //! so all channels share the same vocabulary; what differs per
@@ -103,7 +103,7 @@ pub trait StatusAdapter: Send + Sync {
 /// owns the loop and calls `finalize` once after the stream closes:
 ///
 /// ```ignore
-/// while let Some(event) = consumer.next().await {
+/// while let Ok(event) = events.recv().await {
 ///     drive_status_updates(&adapter, &event).await?;
 /// }
 /// adapter.finalize(&assistant_reply).await?;

@@ -87,11 +87,11 @@ pub mod meta_signature;
 /// Per-channel adapter implementations
 pub mod channels;
 
-/// AG-UI SSE consumer for streaming pipeline progress to channel users.
+/// AG-UI event schema decoded on the consumer side of a pipeline run.
 ///
-/// Feature-gated behind `agui`; requires the `reqwest/stream`
-/// back-pressure support. See module docs for the expected usage in
-/// channel adapters that render per-stage status (e.g. Telegram).
+/// Feature-gated behind `agui`. The producer (dravr-platform) hands
+/// events to this crate in-process; see module docs for how channel
+/// adapters render per-stage status (e.g. Telegram).
 #[cfg(feature = "agui")]
 pub mod agui_consumer;
 

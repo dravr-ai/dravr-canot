@@ -1,5 +1,5 @@
-// ABOUTME: Integration tests for the AG-UI consumer — SSE frame parsing + event deserialization
-// ABOUTME: Full HTTP stream tests live in the dravr-platform integration suite
+// ABOUTME: Integration tests for AG-UI event deserialization from the platform's wire format
+// ABOUTME: Channel rendering of the decoded events is covered by the per-channel agui_*_e2e tests
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright (c) 2026 dravr.ai

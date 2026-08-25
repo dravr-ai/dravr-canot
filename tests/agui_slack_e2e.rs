@@ -1,5 +1,5 @@
-// ABOUTME: End-to-end test of AG-UI SSE consumption driving Slack chat.update status edits
-// ABOUTME: Stands up mock SSE source and mock Slack Web API to assert status round-trips
+// ABOUTME: End-to-end test of in-process AG-UI event consumption driving Slack chat.update status edits
+// ABOUTME: Replays a run's event broadcast into the status adapter against a mock Slack Web API
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright (c) 2026 dravr.ai
@@ -8,60 +8,22 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 #![allow(missing_docs)]
 
-use dravr_canot::agui_consumer::{AgUiConsumer, AgUiEvent};
+use dravr_canot::agui_consumer::AgUiEvent;
 use dravr_canot::agui_status::{status_text_for_event, StatusAdapter};
 use dravr_canot::channels::slack::agui_status::SlackStatusAdapter;
 use serde_json::{json, Value};
-use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tokio::net::TcpListener;
-use tokio::sync::mpsc;
+use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
-use tokio::time::timeout;
 
 /// Shared state for the mock Slack Web API server: every recorded
 /// `chat.postMessage` / `chat.update` payload lands in `calls`.
 #[derive(Clone)]
 struct MockSlackState {
     calls: Arc<Mutex<Vec<Value>>>,
-}
-
-/// Start a mock AG-UI SSE server that streams the given event payloads
-/// to a single subscriber, then closes the connection.
-async fn spawn_mock_sse_server(events: Vec<String>) -> (String, JoinHandle<()>) {
-    use axum::extract::Path;
-    use axum::response::sse::{Event, KeepAlive, Sse};
-    use axum::routing::get;
-    use axum::Router;
-    use futures_util::stream;
-
-    let events_arc = Arc::new(events);
-    let app = Router::new().route(
-        "/api/agui/runs/{run_id}/stream",
-        get({
-            let events = Arc::clone(&events_arc);
-            move |Path(_run_id): Path<String>| {
-                let events = Arc::clone(&events);
-                async move {
-                    let items: Vec<Result<Event, Infallible>> = events
-                        .iter()
-                        .map(|payload| Ok(Event::default().event("agui").data(payload.clone())))
-                        .collect();
-                    let s = stream::iter(items);
-                    Sse::new(s).keep_alive(KeepAlive::default())
-                }
-            }
-        }),
-    );
-
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
-    let port = listener.local_addr().expect("local addr").port();
-    let handle = tokio::spawn(async move {
-        axum::serve(listener, app).await.expect("serve");
-    });
-    (format!("http://127.0.0.1:{port}"), handle)
 }
 
 /// A mock Slack Web API server. Captures every `chat.postMessage` and
@@ -133,9 +95,9 @@ fn payload(event: &Value) -> String {
 
 /// Full cross-layer end-to-end:
 ///
-/// 1. Mock platform serves an AG-UI SSE run with a realistic event sequence.
+/// 1. A realistic AG-UI event sequence is replayed on the run broadcast.
 /// 2. Mock Slack Web API captures outbound HTTP calls.
-/// 3. `AgUiConsumer` subscribes to the SSE stream.
+/// 3. The in-process subscriber decodes each payload into an `AgUiEvent`.
 /// 4. For each event, the test renders status text and forwards it to
 ///    `SlackStatusAdapter::set_status`, which issues `chat.update`.
 /// 5. On `RUN_FINISHED`, the test calls `finalize("…assistant reply…")`
@@ -185,7 +147,6 @@ async fn agui_to_slack_end_to_end() {
         })),
     ];
 
-    let (sse_base, sse_handle) = spawn_mock_sse_server(events).await;
     let (slack_base, slack_calls, slack_handle) = spawn_mock_slack_api().await;
 
     // Seed a placeholder "thinking…" message via the mock Web API so
@@ -203,32 +164,25 @@ async fn agui_to_slack_end_to_end() {
     .with_edit_throttle(Duration::ZERO);
     assert_eq!(adapter.ts(), "1700000000.000100");
 
-    // Subscribe to the SSE stream.
-    let consumer = AgUiConsumer::new(sse_base.parse().expect("sse base url"), "fake_bearer_token");
-    let (tx, mut rx) = mpsc::unbounded_channel::<AgUiEvent>();
-    let consumer_handle = tokio::spawn(async move {
-        let _ = consumer
-            .stream("run_xyz", |event| {
-                let tx = tx.clone();
-                async move {
-                    let _ = tx.send(event);
-                }
-            })
-            .await;
-    });
+    // Replay the run's events the way the platform hands them to the
+    // status bridge: serialized AG-UI payloads on the run's broadcast,
+    // decoded in-process by the subscriber. There is no HTTP hop —
+    // producer and status adapter live in the same process.
+    let (tx, mut rx) = broadcast::channel::<String>(16);
+    for event in events {
+        tx.send(event).expect("queue AG-UI event");
+    }
+    drop(tx);
 
     let mut saw_run_finished = false;
-    let drain_deadline = Duration::from_secs(3);
-    let start = Instant::now();
-    while start.elapsed() < drain_deadline {
-        if let Ok(Some(event)) = timeout(Duration::from_millis(100), rx.recv()).await {
-            if let Some(text) = status_text_for_event(&event) {
-                adapter.set_status(&text).await.expect("set_status");
-            }
-            if matches!(event, AgUiEvent::RunFinished { .. }) {
-                saw_run_finished = true;
-                break;
-            }
+    while let Ok(payload) = rx.recv().await {
+        let event: AgUiEvent = serde_json::from_str(&payload).expect("decode AG-UI event");
+        if let Some(text) = status_text_for_event(&event) {
+            adapter.set_status(&text).await.expect("set_status");
+        }
+        if matches!(event, AgUiEvent::RunFinished { .. }) {
+            saw_run_finished = true;
+            break;
         }
     }
     assert!(saw_run_finished, "never observed RUN_FINISHED");
@@ -238,8 +192,6 @@ async fn agui_to_slack_end_to_end() {
         .await
         .expect("finalize");
 
-    consumer_handle.abort();
-    sse_handle.abort();
     slack_handle.abort();
 
     print_slack_trace(&slack_calls);
