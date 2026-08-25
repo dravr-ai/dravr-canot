@@ -13,7 +13,7 @@ use serde::Serialize;
 use tracing::{debug, warn};
 
 use dravr_canot::error::ErrorResponse;
-use dravr_canot::models::{ChannelType, IncomingMessage};
+use dravr_canot::models::{ChannelType, InboundReaction, IncomingMessage};
 
 use crate::state::SharedState;
 
@@ -24,14 +24,20 @@ pub struct WebhookResponse {
     pub message_count: usize,
     /// Parsed inbound messages
     pub messages: Vec<IncomingMessage>,
+    /// Number of reaction events parsed from the webhook payload
+    pub reaction_count: usize,
+    /// Parsed inbound reaction events. Empty for channels whose webhook
+    /// API delivers no reaction events (see
+    /// `ChannelDescriptor::delivers_inbound_reactions`).
+    pub reactions: Vec<InboundReaction>,
 }
 
 /// Handle POST /api/messaging/webhook/:channel
 ///
 /// Receives an inbound webhook from a messaging platform, verifies its
 /// cryptographic signature using the registered channel adapter, parses
-/// the payload into normalized `IncomingMessage` structs, and returns
-/// them as JSON.
+/// the payload into normalized `IncomingMessage` structs plus any
+/// `InboundReaction` events, and returns them as JSON.
 pub async fn handle(
     State(state): State<SharedState>,
     Path(channel): Path<String>,
@@ -79,26 +85,43 @@ pub async fn handle(
     }
 
     // Parse inbound messages
-    match adapter.receive(&headers, &body).await {
-        Ok(messages) => {
-            debug!(
-                channel = %channel_type,
-                count = messages.len(),
-                "Parsed inbound messages"
-            );
-            let resp = WebhookResponse {
-                message_count: messages.len(),
-                messages,
-            };
-            (StatusCode::OK, Json(resp)).into_response()
-        }
+    let messages = match adapter.receive(&headers, &body).await {
+        Ok(messages) => messages,
         Err(e) => {
             warn!(channel = %channel_type, error = %e, "Failed to parse webhook payload");
-            (
+            return (
                 StatusCode::BAD_REQUEST,
                 Json(ErrorResponse::new("invalid_payload", e)),
             )
-                .into_response()
+                .into_response();
         }
-    }
+    };
+
+    // Parse inbound reaction events from the same verified body. Channels
+    // whose webhook API delivers no reaction events return an empty list.
+    let reactions = match adapter.receive_reactions(&headers, &body).await {
+        Ok(reactions) => reactions,
+        Err(e) => {
+            warn!(channel = %channel_type, error = %e, "Failed to parse webhook reactions");
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse::new("invalid_payload", e)),
+            )
+                .into_response();
+        }
+    };
+
+    debug!(
+        channel = %channel_type,
+        message_count = messages.len(),
+        reaction_count = reactions.len(),
+        "Parsed inbound webhook"
+    );
+    let resp = WebhookResponse {
+        message_count: messages.len(),
+        messages,
+        reaction_count: reactions.len(),
+        reactions,
+    };
+    (StatusCode::OK, Json(resp)).into_response()
 }

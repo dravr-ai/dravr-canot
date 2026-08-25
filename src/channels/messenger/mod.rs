@@ -64,6 +64,12 @@ impl ChannelDescriptor for MessengerDescriptor {
     fn supports_media(&self) -> bool {
         true
     }
+    /// The Messenger Platform webhook delivers no reaction event in the
+    /// shape [`InboundReaction`](crate::models::InboundReaction) models,
+    /// so inbound reactions are not surfaced for this channel.
+    fn delivers_inbound_reactions(&self) -> bool {
+        false
+    }
     fn max_message_length(&self) -> usize {
         2000
     }

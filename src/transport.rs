@@ -8,8 +8,10 @@ use async_trait::async_trait;
 use http::HeaderMap;
 use serde_json::Value;
 
+use tracing::debug;
+
 use crate::error::MessagingResult;
-use crate::models::{ChannelConfig, DeliveryReceipt, IncomingMessage};
+use crate::models::{ChannelConfig, DeliveryReceipt, InboundReaction, IncomingMessage};
 use crate::turn::ConversationTurnId;
 
 /// Low-level transport adapter for channel wire protocols
@@ -40,6 +42,35 @@ pub trait TransportAdapter: Send + Sync {
         headers: &HeaderMap,
         body: &[u8],
     ) -> MessagingResult<Vec<IncomingMessage>>;
+
+    /// Parse reaction events out of a raw webhook body.
+    ///
+    /// Channels whose webhook API delivers reaction events override this:
+    /// Telegram (`message_reaction` updates — delivered only when the bot's
+    /// webhook is registered with `allowed_updates` including
+    /// `"message_reaction"`, which the Bot API excludes by default), Slack
+    /// (`reaction_added` / `reaction_removed` events), and Discord
+    /// (`MESSAGE_REACTION_ADD` / `MESSAGE_REACTION_REMOVE` Gateway
+    /// dispatches). The default returns an empty list because the remaining
+    /// platforms (`WhatsApp` Business Cloud, Messenger Platform) deliver no
+    /// reaction webhook in this shape, so "no reactions" is the correct
+    /// parse of every payload they send. Capability is advertised by
+    /// [`ChannelDescriptor::delivers_inbound_reactions`](crate::descriptor::ChannelDescriptor::delivers_inbound_reactions).
+    ///
+    /// # Errors
+    ///
+    /// Returns `MessagingError::InvalidPayload` if the body cannot be parsed.
+    async fn parse_reactions(
+        &self,
+        _headers: &HeaderMap,
+        body: &[u8],
+    ) -> MessagingResult<Vec<InboundReaction>> {
+        debug!(
+            body_len = body.len(),
+            "channel webhook delivers no inbound reaction events; none parsed"
+        );
+        Ok(vec![])
+    }
 
     /// Send a pre-rendered payload to the channel API.
     ///

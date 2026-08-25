@@ -279,6 +279,63 @@ pub struct OutgoingMessage {
 }
 
 // ============================================================================
+// Reactions
+// ============================================================================
+
+/// Direction of an inbound reaction change on a previously delivered message
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReactionAction {
+    /// The user placed the reaction on the message
+    Added,
+    /// The user removed a previously placed reaction from the message
+    Removed,
+}
+
+impl fmt::Display for ReactionAction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Added => write!(f, "added"),
+            Self::Removed => write!(f, "removed"),
+        }
+    }
+}
+
+/// A normalized inbound reaction event received from a webhook.
+///
+/// Emitted when a channel user adds or removes an emoji reaction on a
+/// message. Only channels whose webhook API delivers reaction events
+/// produce these — see
+/// [`ChannelDescriptor::delivers_inbound_reactions`](crate::descriptor::ChannelDescriptor::delivers_inbound_reactions).
+/// Hosts key message feedback off `channel_message_id` scoped by
+/// `conversation_id`, because Telegram message ids and Slack timestamps
+/// are unique only within a chat.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InboundReaction {
+    /// Source channel platform
+    pub channel_type: ChannelType,
+    /// Channel-native id of the message the reaction targets (Telegram
+    /// `message_id`, Slack message `ts`, Discord message snowflake)
+    pub channel_message_id: String,
+    /// Channel-native id of the reacting user
+    pub reactor_id: String,
+    /// Unicode emoji, or the channel's native reaction name when the
+    /// reaction is not a plain emoji (Slack reaction names like
+    /// `thumbsup`, Discord custom-emoji names, Telegram custom-emoji ids)
+    pub emoji: String,
+    /// Whether the reaction was added to or removed from the message
+    pub action: ReactionAction,
+    /// Channel-native conversation/chat id the message lives in. Present
+    /// for every channel that delivers reaction webhooks; `Option` mirrors
+    /// [`IncomingMessage::conversation_id`] for serde compatibility.
+    pub conversation_id: Option<String>,
+    /// Timestamp when the event was received
+    pub timestamp: DateTime<Utc>,
+    /// Raw webhook payload for debugging and audit
+    pub raw_payload: Value,
+}
+
+// ============================================================================
 // Delivery
 // ============================================================================
 

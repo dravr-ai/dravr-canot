@@ -11,7 +11,7 @@ use tracing::debug;
 
 use crate::error::MessagingResult;
 use crate::models::{
-    ChannelConfig, ChannelType, DeliveryReceipt, IncomingMessage, OutgoingMessage,
+    ChannelConfig, ChannelType, DeliveryReceipt, InboundReaction, IncomingMessage, OutgoingMessage,
 };
 use crate::turn::ConversationTurnId;
 
@@ -46,6 +46,37 @@ pub trait MessagingChannel: Send + Sync {
         headers: &HeaderMap,
         body: &[u8],
     ) -> MessagingResult<Vec<IncomingMessage>>;
+
+    /// Parse inbound reaction events out of a webhook payload.
+    ///
+    /// Reactions are feedback on previously delivered messages, not new
+    /// conversational input, so they surface as [`InboundReaction`] events
+    /// separate from [`Self::receive`]'s message stream. Hosts call this
+    /// alongside `receive` on the same verified webhook body for channels
+    /// whose descriptor advertises
+    /// [`delivers_inbound_reactions`](crate::descriptor::ChannelDescriptor::delivers_inbound_reactions).
+    ///
+    /// The default implementation returns an empty list: channels whose
+    /// platform delivers no reaction webhook in this shape (`WhatsApp`
+    /// Business Cloud, Messenger Platform) inherit it. Telegram, Slack,
+    /// and Discord override it by delegating to their transport's
+    /// `parse_reactions`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `MessagingError::InvalidPayload` if the payload cannot be
+    /// parsed.
+    async fn receive_reactions(
+        &self,
+        _headers: &HeaderMap,
+        body: &[u8],
+    ) -> MessagingResult<Vec<InboundReaction>> {
+        debug!(
+            body_len = body.len(),
+            "channel delivers no inbound reaction events; none parsed"
+        );
+        Ok(vec![])
+    }
 
     /// Render an outbound message to the channel's native payload format
     ///

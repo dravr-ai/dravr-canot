@@ -14,7 +14,7 @@ pub mod transport;
 
 use crate::error::MessagingResult;
 use crate::models::{
-    ChannelConfig, ChannelType, DeliveryReceipt, IncomingMessage, OutgoingMessage,
+    ChannelConfig, ChannelType, DeliveryReceipt, InboundReaction, IncomingMessage, OutgoingMessage,
 };
 use async_trait::async_trait;
 use http::HeaderMap;
@@ -77,6 +77,11 @@ impl ChannelDescriptor for SlackDescriptor {
     fn supports_media(&self) -> bool {
         true
     }
+    /// Slack delivers `reaction_added` / `reaction_removed` events when the
+    /// app subscribes to them in its Event Subscriptions configuration.
+    fn delivers_inbound_reactions(&self) -> bool {
+        true
+    }
     fn max_message_length(&self) -> usize {
         40000
     }
@@ -101,6 +106,14 @@ impl MessagingChannel for SlackChannel {
         body: &[u8],
     ) -> MessagingResult<Vec<IncomingMessage>> {
         self.transport.parse_inbound(headers, body).await
+    }
+
+    async fn receive_reactions(
+        &self,
+        headers: &HeaderMap,
+        body: &[u8],
+    ) -> MessagingResult<Vec<InboundReaction>> {
+        self.transport.parse_reactions(headers, body).await
     }
 
     fn render(&self, msg: &OutgoingMessage) -> MessagingResult<Value> {

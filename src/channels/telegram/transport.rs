@@ -6,7 +6,8 @@
 
 use crate::error::{MessagingError, MessagingResult};
 use crate::models::{
-    ChannelConfig, ChannelType, DeliveryReceipt, DeliveryStatus, IncomingMessage, MessageContent,
+    ChannelConfig, ChannelType, DeliveryReceipt, DeliveryStatus, InboundReaction, IncomingMessage,
+    MessageContent, ReactionAction,
 };
 use async_trait::async_trait;
 use chrono::Utc;
@@ -400,6 +401,33 @@ impl TransportAdapter for TelegramTransport {
         Ok(vec![incoming])
     }
 
+    /// Parse a Telegram `message_reaction` update into reaction events.
+    ///
+    /// Telegram reports the reactor's full reaction set before and after
+    /// the change (`old_reaction` / `new_reaction`), so one update can
+    /// yield several events — e.g. swapping 👍 for ❤ emits one `Removed`
+    /// and one `Added`. Delivered only when the bot's webhook is
+    /// registered with `allowed_updates` including `"message_reaction"`
+    /// (the Bot API excludes it from the default update set).
+    async fn parse_reactions(
+        &self,
+        _headers: &HeaderMap,
+        body: &[u8],
+    ) -> MessagingResult<Vec<InboundReaction>> {
+        let update: Value =
+            serde_json::from_slice(body).map_err(|e| MessagingError::InvalidPayload {
+                channel: "telegram".to_owned(),
+                reason: format!("invalid JSON: {e}"),
+            })?;
+
+        let Some(reaction) = update.get("message_reaction") else {
+            debug!("Telegram update without message_reaction field; no reactions parsed");
+            return Ok(vec![]);
+        };
+
+        parse_message_reaction(reaction, &update)
+    }
+
     async fn send_raw(
         &self,
         payload: &Value,
@@ -574,6 +602,103 @@ fn resolve_bot_api_method(payload: &Value) -> &'static str {
         "sendLocation"
     } else {
         "sendMessage"
+    }
+}
+
+/// Parse a Telegram `MessageReactionUpdated` object into reaction events,
+/// diffing `old_reaction` against `new_reaction` per reaction name.
+///
+/// The reactor is `user` for a named user, or `actor_chat` when the chat
+/// reacted anonymously (Telegram sends exactly one of the two).
+///
+/// # Errors
+///
+/// Returns [`MessagingError::InvalidPayload`] when `chat.id`, `message_id`,
+/// or the reactor (`user.id` / `actor_chat.id`) is missing.
+fn parse_message_reaction(
+    reaction: &Value,
+    update: &Value,
+) -> MessagingResult<Vec<InboundReaction>> {
+    let missing = |field: &str| MessagingError::InvalidPayload {
+        channel: "telegram".to_owned(),
+        reason: format!("message_reaction missing {field}"),
+    };
+
+    let chat_id = reaction
+        .pointer("/chat/id")
+        .and_then(Value::as_i64)
+        .ok_or_else(|| missing("chat.id"))?;
+    let message_id = reaction
+        .get("message_id")
+        .and_then(Value::as_i64)
+        .ok_or_else(|| missing("message_id"))?;
+    let reactor_id = reaction
+        .pointer("/user/id")
+        .and_then(Value::as_i64)
+        .or_else(|| reaction.pointer("/actor_chat/id").and_then(Value::as_i64))
+        .ok_or_else(|| missing("user.id / actor_chat.id"))?;
+
+    let old_names = reaction_names(reaction.get("old_reaction"));
+    let new_names = reaction_names(reaction.get("new_reaction"));
+
+    let build = |emoji: &str, action: ReactionAction| InboundReaction {
+        channel_type: ChannelType::Telegram,
+        channel_message_id: message_id.to_string(),
+        reactor_id: reactor_id.to_string(),
+        emoji: emoji.to_owned(),
+        action,
+        conversation_id: Some(chat_id.to_string()),
+        timestamp: Utc::now(),
+        raw_payload: update.clone(),
+    };
+
+    let mut events: Vec<InboundReaction> = new_names
+        .iter()
+        .filter(|name| !old_names.contains(name))
+        .map(|name| build(name, ReactionAction::Added))
+        .collect();
+    events.extend(
+        old_names
+            .iter()
+            .filter(|name| !new_names.contains(name))
+            .map(|name| build(name, ReactionAction::Removed)),
+    );
+
+    for event in &events {
+        info!(
+            chat_id,
+            message_id,
+            emoji = %event.emoji,
+            action = %event.action,
+            "telegram inbound reaction parsed"
+        );
+    }
+
+    Ok(events)
+}
+
+/// Extract reaction names from a Telegram `ReactionType` array
+/// (`old_reaction` / `new_reaction`).
+fn reaction_names(list: Option<&Value>) -> Vec<String> {
+    list.and_then(Value::as_array)
+        .map(|arr| arr.iter().filter_map(reaction_name).collect())
+        .unwrap_or_default()
+}
+
+/// Name a single Telegram `ReactionType` object: the emoji itself for
+/// `emoji`, the custom-emoji id for `custom_emoji`, and the literal type
+/// tag for tagged variants that carry no name of their own (e.g. `paid`).
+fn reaction_name(reaction: &Value) -> Option<String> {
+    match reaction.get("type").and_then(Value::as_str)? {
+        "emoji" => reaction
+            .get("emoji")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        "custom_emoji" => reaction
+            .get("custom_emoji_id")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        other => Some(other.to_owned()),
     }
 }
 

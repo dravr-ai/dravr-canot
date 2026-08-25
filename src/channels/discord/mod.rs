@@ -16,7 +16,7 @@ pub mod transport;
 
 use crate::error::MessagingResult;
 use crate::models::{
-    ChannelConfig, ChannelType, DeliveryReceipt, IncomingMessage, OutgoingMessage,
+    ChannelConfig, ChannelType, DeliveryReceipt, InboundReaction, IncomingMessage, OutgoingMessage,
 };
 use async_trait::async_trait;
 use http::HeaderMap;
@@ -69,6 +69,13 @@ impl ChannelDescriptor for DiscordDescriptor {
     fn supports_media(&self) -> bool {
         true
     }
+    /// Discord delivers `MESSAGE_REACTION_ADD` / `MESSAGE_REACTION_REMOVE`
+    /// as Gateway dispatch frames (the interactions webhook never carries
+    /// reactions); the bot needs the `GUILD_MESSAGE_REACTIONS` /
+    /// `DIRECT_MESSAGE_REACTIONS` intents.
+    fn delivers_inbound_reactions(&self) -> bool {
+        true
+    }
     fn max_message_length(&self) -> usize {
         2000
     }
@@ -93,6 +100,14 @@ impl MessagingChannel for DiscordChannel {
         body: &[u8],
     ) -> MessagingResult<Vec<IncomingMessage>> {
         self.transport.parse_inbound(headers, body).await
+    }
+
+    async fn receive_reactions(
+        &self,
+        headers: &HeaderMap,
+        body: &[u8],
+    ) -> MessagingResult<Vec<InboundReaction>> {
+        self.transport.parse_reactions(headers, body).await
     }
 
     fn render(&self, msg: &OutgoingMessage) -> MessagingResult<Value> {

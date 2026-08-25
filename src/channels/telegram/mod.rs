@@ -14,7 +14,7 @@ pub mod transport;
 
 use crate::error::MessagingResult;
 use crate::models::{
-    ChannelConfig, ChannelType, DeliveryReceipt, IncomingMessage, OutgoingMessage,
+    ChannelConfig, ChannelType, DeliveryReceipt, InboundReaction, IncomingMessage, OutgoingMessage,
 };
 use async_trait::async_trait;
 use http::HeaderMap;
@@ -78,6 +78,13 @@ impl ChannelDescriptor for TelegramDescriptor {
     fn supports_media(&self) -> bool {
         true
     }
+    /// Telegram delivers `message_reaction` updates, but only when the
+    /// bot's webhook is registered with `allowed_updates` including
+    /// `"message_reaction"` — the Bot API excludes it from the default
+    /// update set.
+    fn delivers_inbound_reactions(&self) -> bool {
+        true
+    }
     fn max_message_length(&self) -> usize {
         4096
     }
@@ -102,6 +109,14 @@ impl MessagingChannel for TelegramChannel {
         body: &[u8],
     ) -> MessagingResult<Vec<IncomingMessage>> {
         self.transport.parse_inbound(headers, body).await
+    }
+
+    async fn receive_reactions(
+        &self,
+        headers: &HeaderMap,
+        body: &[u8],
+    ) -> MessagingResult<Vec<InboundReaction>> {
+        self.transport.parse_reactions(headers, body).await
     }
 
     fn render(&self, msg: &OutgoingMessage) -> MessagingResult<Value> {

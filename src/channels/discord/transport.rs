@@ -10,7 +10,8 @@ use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 
 use crate::error::{MessagingError, MessagingResult};
 use crate::models::{
-    ChannelConfig, ChannelType, DeliveryReceipt, DeliveryStatus, IncomingMessage, MessageContent,
+    ChannelConfig, ChannelType, DeliveryReceipt, DeliveryStatus, InboundReaction, IncomingMessage,
+    MessageContent, ReactionAction,
 };
 use http::HeaderMap;
 use serde_json::Value;
@@ -215,6 +216,83 @@ impl TransportAdapter for DiscordTransport {
         };
 
         Ok(vec![incoming])
+    }
+
+    /// Parse a Discord `MESSAGE_REACTION_ADD` / `MESSAGE_REACTION_REMOVE`
+    /// dispatch into a reaction event.
+    ///
+    /// Discord delivers reactions on the Gateway as dispatch frames — the
+    /// interactions webhook never carries them — so this accepts the
+    /// Gateway dispatch envelope `{"op": 0, "t": "MESSAGE_REACTION_ADD",
+    /// "d": {...}}` as the body. Receiving them requires the
+    /// `GUILD_MESSAGE_REACTIONS` / `DIRECT_MESSAGE_REACTIONS` intents.
+    /// Unicode reactions carry the emoji in `emoji.name`; custom emoji
+    /// whose name Discord no longer knows fall back to `emoji.id`.
+    async fn parse_reactions(
+        &self,
+        _headers: &HeaderMap,
+        body: &[u8],
+    ) -> MessagingResult<Vec<InboundReaction>> {
+        let payload: Value =
+            serde_json::from_slice(body).map_err(|e| MessagingError::InvalidPayload {
+                channel: "discord".to_owned(),
+                reason: format!("invalid JSON: {e}"),
+            })?;
+
+        let action = match payload.get("t").and_then(Value::as_str) {
+            Some("MESSAGE_REACTION_ADD") => ReactionAction::Added,
+            Some("MESSAGE_REACTION_REMOVE") => ReactionAction::Removed,
+            other => {
+                debug!(dispatch = ?other, "Not a Discord reaction dispatch; no reactions parsed");
+                return Ok(vec![]);
+            }
+        };
+
+        let missing = |field: &str| MessagingError::InvalidPayload {
+            channel: "discord".to_owned(),
+            reason: format!("reaction dispatch missing {field}"),
+        };
+        let data = payload.get("d").ok_or_else(|| missing("d"))?;
+        let reactor_id = data
+            .get("user_id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| missing("d.user_id"))?
+            .to_owned();
+        let message_id = data
+            .get("message_id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| missing("d.message_id"))?
+            .to_owned();
+        let channel_id = data
+            .get("channel_id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| missing("d.channel_id"))?
+            .to_owned();
+        let emoji = data
+            .pointer("/emoji/name")
+            .and_then(Value::as_str)
+            .or_else(|| data.pointer("/emoji/id").and_then(Value::as_str))
+            .ok_or_else(|| missing("d.emoji.name / d.emoji.id"))?
+            .to_owned();
+
+        debug!(
+            channel_id,
+            message_id,
+            emoji,
+            action = %action,
+            "discord inbound reaction parsed"
+        );
+
+        Ok(vec![InboundReaction {
+            channel_type: ChannelType::Discord,
+            channel_message_id: message_id,
+            reactor_id,
+            emoji,
+            action,
+            conversation_id: Some(channel_id),
+            timestamp: Utc::now(),
+            raw_payload: payload,
+        }])
     }
 
     async fn send_raw(

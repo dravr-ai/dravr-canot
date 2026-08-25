@@ -8,8 +8,8 @@ use std::str;
 
 use crate::error::{MessagingError, MessagingResult};
 use crate::models::{
-    ChannelConfig, ChannelType, DeliveryReceipt, DeliveryStatus, IncomingMessage, MessageContent,
-    WebhookTimestampPolicy,
+    ChannelConfig, ChannelType, DeliveryReceipt, DeliveryStatus, InboundReaction, IncomingMessage,
+    MessageContent, ReactionAction, WebhookTimestampPolicy,
 };
 use async_trait::async_trait;
 use chrono::Utc;
@@ -223,6 +223,84 @@ impl TransportAdapter for SlackTransport {
             is_direct_message,
             addressed_to_bot,
             metadata: Value::Null,
+        }])
+    }
+
+    /// Parse a Slack `reaction_added` / `reaction_removed` event into a
+    /// reaction event.
+    ///
+    /// Delivered when the app subscribes to those event types in its Event
+    /// Subscriptions configuration. Only reactions on `item.type ==
+    /// "message"` are surfaced — Slack also emits reaction events for
+    /// files and file comments, which have no chat message to key on.
+    async fn parse_reactions(
+        &self,
+        _headers: &HeaderMap,
+        body: &[u8],
+    ) -> MessagingResult<Vec<InboundReaction>> {
+        let payload: Value = Self::parse_slack_body(body)?;
+
+        let Some(event) = payload.get("event") else {
+            debug!("Slack payload without event field; no reactions parsed");
+            return Ok(vec![]);
+        };
+
+        let action = match event.get("type").and_then(Value::as_str) {
+            Some("reaction_added") => ReactionAction::Added,
+            Some("reaction_removed") => ReactionAction::Removed,
+            other => {
+                debug!(event_type = ?other, "Not a Slack reaction event; no reactions parsed");
+                return Ok(vec![]);
+            }
+        };
+
+        if event.pointer("/item/type").and_then(Value::as_str) != Some("message") {
+            debug!("Slack reaction on a non-message item; no reactions parsed");
+            return Ok(vec![]);
+        }
+
+        let missing = |field: &str| MessagingError::InvalidPayload {
+            channel: "slack".to_owned(),
+            reason: format!("reaction event missing {field}"),
+        };
+        let reactor_id = event
+            .get("user")
+            .and_then(Value::as_str)
+            .ok_or_else(|| missing("user"))?
+            .to_owned();
+        let emoji = event
+            .get("reaction")
+            .and_then(Value::as_str)
+            .ok_or_else(|| missing("reaction"))?
+            .to_owned();
+        let channel_id = event
+            .pointer("/item/channel")
+            .and_then(Value::as_str)
+            .ok_or_else(|| missing("item.channel"))?
+            .to_owned();
+        let message_ts = event
+            .pointer("/item/ts")
+            .and_then(Value::as_str)
+            .ok_or_else(|| missing("item.ts"))?
+            .to_owned();
+
+        debug!(
+            channel_id,
+            message_ts,
+            emoji,
+            action = %action,
+            "slack inbound reaction parsed"
+        );
+
+        Ok(vec![InboundReaction {
+            channel_type: ChannelType::Slack,
+            channel_message_id: message_ts,
+            reactor_id,
+            emoji,
+            action,
+            conversation_id: Some(channel_id),
+            timestamp: Utc::now(),
+            raw_payload: payload,
         }])
     }
 
