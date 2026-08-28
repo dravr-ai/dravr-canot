@@ -168,6 +168,21 @@ impl TelegramTransport {
         Some(username)
     }
 
+    /// The text that should reach the command matcher: `/command@this_bot`
+    /// rewritten to `/command`, or `None` when the message needs no rewrite.
+    ///
+    /// The `getMe` round trip behind [`Self::bot_username`] is paid only when
+    /// a suffix is actually present, so a DM, ordinary prose, and a bare
+    /// `/command` never trigger one.
+    async fn command_text_without_bot_suffix(&self, text: Option<&str>) -> Option<String> {
+        let text = text?;
+        if !text.starts_with('/') || !text.split_whitespace().next()?.contains('@') {
+            return None;
+        }
+        let username = self.bot_username().await?;
+        strip_command_bot_suffix(text, &username)
+    }
+
     /// `true` when a group message explicitly addresses this bot: a reply to
     /// one of the bot's own messages, a `text_mention` entity naming the bot
     /// user, or an `@username` mention in the text or media caption.
@@ -212,6 +227,36 @@ impl TelegramTransport {
 /// Derive the numeric bot id from a Bot API token (`<bot_id>:<secret>`).
 fn bot_id_from_token(token: &str) -> Option<i64> {
     token.split(':').next()?.parse().ok()
+}
+
+/// Rewrite a leading `/command@this_bot` to `/command`, leaving a command
+/// aimed at a different bot untouched.
+///
+/// Telegram appends `@<botusername>` to the command entity whenever a command
+/// is tapped in a chat holding more than one bot, and that suffixed form is
+/// also the one guaranteed to be delivered to a bot whose privacy mode is on.
+/// The command matcher requires a word boundary after the command key, so an
+/// unstripped suffix turns every such invocation into an unknown-command
+/// reply.
+///
+/// Only our own username is stripped: in a multi-bot group, `/help@OtherBot`
+/// must stay untouched so this bot does not answer for its neighbour.
+///
+/// Returns `None` when there is nothing to rewrite — not a command, no
+/// suffix, or a suffix naming another bot.
+fn strip_command_bot_suffix(text: &str, username: &str) -> Option<String> {
+    if !text.starts_with('/') {
+        return None;
+    }
+    // Telegram marks only the first token as the bot_command entity, so the
+    // suffix can only ever sit on it: `/group@bot invite x`, never on `invite`.
+    let end = text.find(char::is_whitespace).unwrap_or(text.len());
+    let (first, rest) = text.split_at(end);
+    let (command, suffix) = first.split_once('@')?;
+    if !suffix.eq_ignore_ascii_case(username) {
+        return None;
+    }
+    Some(format!("{command}{rest}"))
 }
 
 /// Case-insensitive search for `@username` in `text`, requiring a word
@@ -349,15 +394,21 @@ impl TransportAdapter for TelegramTransport {
             .and_then(Value::as_i64)
             .unwrap_or(0);
 
-        let content = message.get("text").and_then(Value::as_str).map_or_else(
+        let raw_text = message.get("text").and_then(Value::as_str);
+        let stripped_command = self.command_text_without_bot_suffix(raw_text).await;
+
+        let content = raw_text.map_or_else(
             || parse_non_text_content(message),
             |text| MessageContent::Text {
-                body: text.to_owned(),
+                body: stripped_command.unwrap_or_else(|| text.to_owned()),
             },
         );
 
         // A DM is inherently addressed to the bot; a group message counts
         // only when it mentions the bot or replies to one of its messages.
+        // Deliberately computed from the raw payload, never from `content`:
+        // `message_addresses_bot` reads the original text, where the
+        // `/command@thisbot` form is itself the mention that addresses us.
         let addressed_to_bot = is_direct_message || self.message_addresses_bot(message).await;
 
         // Extract forum topic thread ID for groups with Topics enabled

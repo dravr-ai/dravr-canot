@@ -227,6 +227,24 @@ fn parse_whatsapp_content(msg: &Value) -> MessageContent {
                 .to_owned();
             MessageContent::Text { body }
         }
+        "interactive" => {
+            // A tapped reply button or list row returns the `id` we sent,
+            // verbatim. For a postback action that id IS the text the press
+            // stands for — the same string the athlete would have typed — so
+            // emitting it as text puts a tap and a typed command on one
+            // dispatch path. Route on the id and never on `title`, which is a
+            // truncated, localized display echo.
+            let body = msg
+                .get("interactive")
+                .and_then(|i| {
+                    i.pointer("/button_reply/id")
+                        .or_else(|| i.pointer("/list_reply/id"))
+                })
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_owned();
+            MessageContent::Text { body }
+        }
         "image" | "video" | "audio" | "document" => {
             let media_obj = msg.get(msg_type);
             let url = media_obj

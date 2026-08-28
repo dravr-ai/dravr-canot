@@ -97,19 +97,70 @@ impl CommandRegistry {
 
     /// Generate the command list for Telegram `setMyCommands` API.
     ///
-    /// Returns `Vec<(command_without_slash, description)>`.
-    /// Only includes top-level commands (single word after `/`).
+    /// Returns `Vec<(command_without_slash, description)>`, sorted by name.
+    ///
+    /// Telegram accepts one token per menu entry — `BotCommand.command` is
+    /// "1-32 characters. Can contain only lowercase English letters, digits
+    /// and underscores" — so a multi-word trigger such as `/group status` can
+    /// never itself be a menu entry. Those commands reach the menu through
+    /// their single-token aliases (`/gs`), which is why aliases are published
+    /// alongside command names: a vocabulary whose group half is entirely
+    /// multi-word would otherwise offer a group no entries at all.
+    ///
+    /// A command's own name beats an alias that collides with it — names are
+    /// collected first and the sort is stable, so the dedup drops the alias.
     #[must_use]
     pub fn bot_command_list(&self) -> Vec<(String, String)> {
+        self.bot_command_list_described(|d| d.description.clone())
+    }
+
+    /// [`Self::bot_command_list`] with `describe` choosing each entry's text.
+    ///
+    /// Telegram serves a different list per scope but offers no styling on a
+    /// menu row: `BotCommand` carries only `command` and `description`, so
+    /// there is no disabled or greyed state to set. A scope that needs to say
+    /// something extra about a command — that it answers its caller alone,
+    /// say — has the description as its one lever, and this is where it
+    /// reaches. The *menu* is still built here, so a scoped list and the
+    /// plain one cannot drift into two implementations.
+    ///
+    /// An alias appears ONLY as a stand-in for a command Telegram cannot
+    /// accept — a multi-word trigger like `/group status`, which reaches the
+    /// menu as `/gs` or not at all. An alias of an already-publishable
+    /// command is left out: `/h` beside `/help` is a duplicate row carrying a
+    /// duplicate description, and a menu of synonyms is harder to read than
+    /// the one it padded. A published alias takes its parent's description,
+    /// marker included.
+    #[must_use]
+    pub fn bot_command_list_described<F>(&self, describe: F) -> Vec<(String, String)>
+    where
+        F: Fn(&CommandDefinition) -> String,
+    {
+        /// Telegram menu entries are one token; a multi-word trigger has none.
+        fn single_token(trigger: &str) -> Option<String> {
+            let name = trigger.trim_start_matches('/').to_owned();
+            (!name.contains(' ')).then_some(name)
+        }
+
         let mut commands: Vec<(String, String)> = self
             .definitions
             .values()
-            .filter(|d| !d.command.contains(' ') || d.command.matches(' ').count() == 0)
-            .map(|d| {
-                let cmd = d.command.trim_start_matches('/').to_owned();
-                (cmd, d.description.clone())
-            })
+            .filter_map(|d| Some((single_token(&d.command)?, describe(d))))
             .collect();
+
+        commands.extend(
+            self.definitions
+                .values()
+                // Only a definition with no publishable name of its own needs
+                // an alias to stand in for it.
+                .filter(|d| single_token(&d.command).is_none())
+                .flat_map(|d| {
+                    d.aliases
+                        .iter()
+                        .filter_map(|alias| Some((single_token(alias)?, describe(d))))
+                }),
+        );
+
         commands.sort_by(|a, b| a.0.cmp(&b.0));
         commands.dedup_by(|a, b| a.0 == b.0);
         commands
