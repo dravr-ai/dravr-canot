@@ -9,7 +9,7 @@ use http::HeaderMap;
 use serde_json::Value;
 use tracing::debug;
 
-use crate::error::MessagingResult;
+use crate::error::{MessagingError, MessagingResult};
 use crate::models::{
     ChannelConfig, ChannelType, DeliveryReceipt, InboundReaction, IncomingMessage, OutgoingMessage,
 };
@@ -126,16 +126,24 @@ pub trait MessagingChannel: Send + Sync {
     /// room/chat id the message lives in; `channel_message_id` is the
     /// channel-native id of the message to remove.
     ///
-    /// The default implementation is a no-op: channels whose API cannot
-    /// delete a member's message (WhatsApp/Messenger business APIs) inherit
-    /// it. Telegram overrides it with a real `deleteMessage` call. Deletion
-    /// is best-effort — Telegram refuses unless the bot is an admin with
-    /// `can_delete_messages`, and the caller treats failures as non-fatal.
+    /// Telegram and Discord override this with a real delete call. The
+    /// default reports [`MessagingError::OperationNotSupported`], because
+    /// channels whose API cannot delete a member's message (`WhatsApp` and
+    /// Messenger business APIs) never attempt one — and a caller that reads
+    /// the outcome to decide what a room is now looking at must be able to
+    /// tell "the message is gone" from "nothing was tried". Returning `Ok`
+    /// for the second told every such caller the echo had been removed when
+    /// it was still on screen.
+    ///
+    /// Deletion stays best-effort: Telegram refuses unless the bot is an
+    /// admin with `can_delete_messages`, and callers treat every error here
+    /// as non-fatal to the turn.
     ///
     /// # Errors
     ///
-    /// Returns `MessagingError::ChannelApiError` / `DeliveryFailed` when an
-    /// overriding channel's API rejects the deletion.
+    /// Returns [`MessagingError::OperationNotSupported`] when the channel has
+    /// no deletion API, and `MessagingError::ChannelApiError` /
+    /// `DeliveryFailed` when an overriding channel's API rejects the request.
     async fn delete_message(
         &self,
         conversation_id: &str,
@@ -146,9 +154,12 @@ pub trait MessagingChannel: Send + Sync {
             channel = ?config.channel_type,
             conversation_id,
             channel_message_id,
-            "delete_message not supported for this channel; skipping"
+            "delete_message not supported for this channel; nothing attempted"
         );
-        Ok(())
+        Err(MessagingError::OperationNotSupported {
+            channel: format!("{:?}", config.channel_type),
+            operation: "message deletion".to_owned(),
+        })
     }
 
     /// Deliver a reply privately to a single user instead of to the room the

@@ -120,6 +120,20 @@ pub enum MessagingError {
         message: String,
     },
 
+    /// The channel has no API for this operation, so it was never attempted
+    ///
+    /// Distinct from an attempt the channel rejected: nothing was tried and
+    /// nothing changed. A caller deciding what a room is now looking at must
+    /// not read this as success — see
+    /// [`MessagingChannel::delete_message`](crate::channel::MessagingChannel::delete_message).
+    #[error("[{channel}] does not support {operation}")]
+    OperationNotSupported {
+        /// Channel that lacks the operation
+        channel: String,
+        /// Operation that was not attempted
+        operation: String,
+    },
+
     /// Link verification code has expired (past TTL)
     #[error("link code has expired")]
     LinkCodeExpired,
