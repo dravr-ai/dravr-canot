@@ -59,7 +59,7 @@ impl ResponseRenderer for DiscordRenderer {
                     "channel_id": msg.recipient_id,
                     "embeds": [{
                         "title": title,
-                        "description": body
+                        "description": rich_text::render_discord_markdown(&rich_text::parse(body))
                     }]
                 });
 

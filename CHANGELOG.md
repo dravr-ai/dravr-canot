@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.4.27] — 2026-09-02
+
+### Added
+
+- feat(rich_text): `parse_markdown`, `render_rich_text` and `escape_markdown` — a host that authors its strings in inline markdown hands the channels the dialect they already translate
+
+### Fixed
+
+- fix(render): a Card body is rendered through the channel's rich-text translator instead of being escaped as plain text, so a `<b>` heading is bold on every channel
+- fix(commands): drop `CommandDefinition::response_template`, a field no host or channel ever read
+
 ## [0.4.25] — 2026-08-28
 
 

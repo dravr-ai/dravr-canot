@@ -23,7 +23,6 @@ fn definition(name: &str, command: &str, aliases: &[&str]) -> CommandDefinition 
         domain: "coach".to_owned(),
         required_role: CommandRole::Any,
         requires_group: false,
-        response_template: String::new(),
     }
 }
 

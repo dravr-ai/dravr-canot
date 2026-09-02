@@ -98,7 +98,7 @@ impl ResponseRenderer for MessengerRenderer {
                                 "template_type": "generic",
                                 "elements": [{
                                     "title": title,
-                                    "subtitle": body,
+                                    "subtitle": rich_text::render_plain(&rich_text::parse(body)),
                                     "buttons": buttons
                                 }]
                             }

@@ -390,7 +390,7 @@ dependencies = [
 
 [[package]]
 name = "dravr-canot"
-version = "0.4.26"
+version = "0.4.27"
 dependencies = [
  "async-trait",
  "axum",

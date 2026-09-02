@@ -83,7 +83,10 @@ impl ResponseRenderer for SlackRenderer {
                     }),
                     json!({
                         "type": "section",
-                        "text": { "type": "mrkdwn", "text": body }
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": rich_text::render_slack_mrkdwn(&rich_text::parse(body))
+                        }
                     }),
                 ];
 

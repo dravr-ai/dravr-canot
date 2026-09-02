@@ -61,8 +61,6 @@ pub struct CommandDefinition {
     pub required_role: CommandRole,
     /// Whether the command requires an active group context
     pub requires_group: bool,
-    /// Response template with `{variable}` placeholders
-    pub response_template: String,
 }
 
 /// A parsed command from user input
@@ -115,11 +113,12 @@ pub struct CommandResponse {
     pub card_title: Option<String>,
     /// Optional action buttons for card responses
     pub actions: Vec<CommandAction>,
-    /// When `true`, `text` contains the rich-text HTML subset
-    /// (`<b>`, `<i>`, `<code>`) and the host bridge should route this
-    /// response through `MessageContent::RichText` so each channel
-    /// renderer translates it into native markup. When `false`,
-    /// `text` is plain.
+    /// When `true`, `text` carries inline formatting for a channel renderer
+    /// to translate into native markup: the `rich_text` HTML subset (`<b>`,
+    /// `<i>`, `<code>`), or the inline-markdown subset `rich_text::parse_markdown`
+    /// reads — a host authoring markdown converts it with
+    /// `rich_text::render_rich_text` before routing the response through
+    /// `MessageContent::RichText`. When `false`, `text` is shown as typed.
     pub is_rich_text: bool,
 }
 
@@ -136,7 +135,8 @@ impl CommandResponse {
         }
     }
 
-    /// Create a rich-text response using the HTML subset (`<b>`, `<i>`, `<code>`).
+    /// Create a formatted response — the HTML subset (`<b>`, `<i>`, `<code>`)
+    /// or the inline-markdown subset `rich_text::parse_markdown` reads.
     ///
     /// The host bridge maps this onto `MessageContent::RichText`, which
     /// each channel renderer translates into native markup (Telegram

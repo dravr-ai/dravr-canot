@@ -175,9 +175,12 @@ pub enum MessageContent {
     },
     /// Rich card with title, body, and action buttons
     Card {
-        /// Card title
+        /// Card title, plain text
         title: String,
-        /// Card body text
+        /// Card body, in the same rich-text dialect as [`Self::RichText`]:
+        /// every channel renders it through its own translator, so a `<b>`
+        /// heading is bold on Telegram, Slack, `WhatsApp` and Discord alike
+        /// and reads as plain words where the channel has no formatting.
         body: String,
         /// Interactive action buttons
         actions: Vec<CardAction>,

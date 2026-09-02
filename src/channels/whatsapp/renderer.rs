@@ -75,7 +75,12 @@ impl ResponseRenderer for WhatsAppRenderer {
                 title,
                 body,
                 actions,
-            } => Ok(render_card(to, title, body, actions)),
+            } => Ok(render_card(
+                to,
+                title,
+                &rich_text::render_whatsapp_text(&rich_text::parse(body)),
+                actions,
+            )),
         }
     }
 

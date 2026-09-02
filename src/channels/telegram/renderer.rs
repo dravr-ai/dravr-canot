@@ -50,7 +50,13 @@ impl ResponseRenderer for TelegramRenderer {
                 body,
                 actions,
             } => {
-                let text = format!("<b>{}</b>\n\n{}", encode_text(title), encode_text(body));
+                // The body speaks the same dialect as `RichText`; only the title
+                // is plain, so only the title is escaped as text.
+                let text = format!(
+                    "<b>{}</b>\n\n{}",
+                    encode_text(title),
+                    rich_text::render_telegram_html(&rich_text::parse(body))
+                );
                 let mut card_payload = json!({
                     "chat_id": chat_id,
                     "text": text,
