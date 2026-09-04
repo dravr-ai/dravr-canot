@@ -52,6 +52,10 @@ impl McpTool<ServerState> for SendMessage {
                 "required": ["channel_type", "recipient_id", "content", "turn_id"]
             }),
             annotations: None,
+            // tronc 0.8.0 added these to `Tool`; neither applies to a
+            // synchronous messaging tool with an untyped result.
+            output_schema: None,
+            execution: None,
         }
     }
 
