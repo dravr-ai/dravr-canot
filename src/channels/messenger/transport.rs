@@ -134,6 +134,18 @@ impl TransportAdapter for MessengerTransport {
 
                 // Handle regular messages
                 if let Some(msg) = event.get("message") {
+                    // Meta redelivers the page's own outbound messages as
+                    // `is_echo` once the `message_echoes` webhook field is
+                    // subscribed. Parsing one as inbound feeds the pipeline its
+                    // own reply, which is the self-reply loop Slack's `bot_id`
+                    // drop and Discord's `author.bot` drop each exist to stop.
+                    // The guard belongs here rather than in the subscription so
+                    // ticking that field in the Meta dashboard cannot start a
+                    // loop.
+                    if msg.get("is_echo").and_then(Value::as_bool) == Some(true) {
+                        continue;
+                    }
+
                     let mid = msg.get("mid").and_then(Value::as_str).unwrap_or("");
                     let content = parse_message_content(msg);
 

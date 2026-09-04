@@ -32,8 +32,17 @@ const OPCODE_HELLO: u64 = 10;
 const OPCODE_HEARTBEAT_ACK: u64 = 11;
 
 /// Discord Gateway intents bitmask
-/// `GUILDS` (1 << 0) | `GUILD_MESSAGES` (1 << 9) | `MESSAGE_CONTENT` (1 << 15) | `DIRECT_MESSAGES` (1 << 12)
-const GATEWAY_INTENTS: u64 = (1 << 0) | (1 << 9) | (1 << 12) | (1 << 15);
+///
+/// `GUILDS` (1 << 0) | `GUILD_MESSAGES` (1 << 9) |
+/// `GUILD_MESSAGE_REACTIONS` (1 << 10) | `DIRECT_MESSAGES` (1 << 12) |
+/// `DIRECT_MESSAGE_REACTIONS` (1 << 13) | `MESSAGE_CONTENT` (1 << 15)
+///
+/// The two reaction intents are what make
+/// [`DiscordDescriptor::delivers_inbound_reactions`](crate::channels::discord::DiscordDescriptor)
+/// true in fact and not just on paper: `parse_reactions` decodes
+/// `MESSAGE_REACTION_ADD` / `MESSAGE_REACTION_REMOVE`, and Discord only sends
+/// those dispatch frames to a session that asked for them here.
+const GATEWAY_INTENTS: u64 = (1 << 0) | (1 << 9) | (1 << 10) | (1 << 12) | (1 << 13) | (1 << 15);
 
 /// Discord Gateway URL
 const GATEWAY_URL: &str = "wss://gateway.discord.gg/?v=10&encoding=json";
@@ -544,6 +553,37 @@ fn calculate_backoff_delay(attempt: u32) -> Duration {
 )]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gateway_requests_the_reaction_intents_the_descriptor_promises() {
+        // DiscordDescriptor::delivers_inbound_reactions returns true and
+        // parse_reactions decodes MESSAGE_REACTION_ADD / _REMOVE, but Discord
+        // only sends those dispatch frames to a session that asked for them.
+        // Without these two bits the advertised capability can never fire.
+        const GUILD_MESSAGE_REACTIONS: u64 = 1 << 10;
+        const DIRECT_MESSAGE_REACTIONS: u64 = 1 << 13;
+
+        assert_eq!(
+            GATEWAY_INTENTS & GUILD_MESSAGE_REACTIONS,
+            GUILD_MESSAGE_REACTIONS,
+            "GUILD_MESSAGE_REACTIONS missing from intents {GATEWAY_INTENTS}"
+        );
+        assert_eq!(
+            GATEWAY_INTENTS & DIRECT_MESSAGE_REACTIONS,
+            DIRECT_MESSAGE_REACTIONS,
+            "DIRECT_MESSAGE_REACTIONS missing from intents {GATEWAY_INTENTS}"
+        );
+    }
+
+    #[test]
+    fn gateway_keeps_the_message_intents_it_already_had() {
+        const GUILDS: u64 = 1 << 0;
+        const GUILD_MESSAGES: u64 = 1 << 9;
+        const DIRECT_MESSAGES: u64 = 1 << 12;
+        const MESSAGE_CONTENT: u64 = 1 << 15;
+        let required = GUILDS | GUILD_MESSAGES | DIRECT_MESSAGES | MESSAGE_CONTENT;
+        assert_eq!(GATEWAY_INTENTS & required, required);
+    }
 
     #[test]
     fn parse_message_create_skips_bot_messages() {
