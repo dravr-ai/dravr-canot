@@ -120,9 +120,11 @@ pub enum AgUiEvent {
         /// Milliseconds since the Unix epoch.
         timestamp: u64,
     },
-    /// Any event kind the consumer does not understand. The raw JSON
-    /// object is preserved so callers can inspect the `type` field and
-    /// handle new AG-UI events without a library upgrade.
+    /// Any event kind the consumer does not understand. Deserialization
+    /// succeeds and the payload is discarded, so an AG-UI event kind
+    /// added after this library was released widens the stream rather
+    /// than failing it; [`crate::agui_status::status_text_for_event`]
+    /// renders nothing for it.
     #[serde(other)]
     Unknown,
 }

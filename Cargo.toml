@@ -105,7 +105,7 @@ channel-telegram = []
 # status adapters that edit a message in place (e.g. Telegram status
 # text). See src/agui_status.rs.
 agui = ["dep:tokio"]
-all-channels = ["channel-whatsapp", "channel-messenger", "channel-discord", "channel-slack", "channel-telegram"]
+all-channels = ["channel-whatsapp", "channel-messenger", "channel-discord", "channel-slack", "channel-telegram", "agui"]
 
 [dependencies]
 async-trait = "0.1"

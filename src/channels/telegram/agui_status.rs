@@ -270,7 +270,7 @@ impl TelegramStatusAdapter {
     }
 
     /// Throttled edit — callers MUST drop the update if we've edited
-    /// within [`EDIT_MIN_INTERVAL`]. Used for intermediate status
+    /// within [`DEFAULT_EDIT_MIN_INTERVAL`]. Used for intermediate status
     /// frames; the terminal [`Self::edit_message_force`] bypasses the
     /// throttle.
     async fn edit_message(&self, text: &str) -> Result<(), MessagingError> {
