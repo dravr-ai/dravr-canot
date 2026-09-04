@@ -33,6 +33,10 @@ impl McpTool<ServerState> for GetChannelConfig {
                 "required": ["channel_type"]
             }),
             annotations: None,
+            // tronc 0.8.0 added these to `Tool`; neither applies to a
+            // synchronous messaging tool with an untyped result.
+            output_schema: None,
+            execution: None,
         }
     }
 
@@ -135,6 +139,10 @@ impl McpTool<ServerState> for SetChannelConfig {
                 "required": ["channel_type"]
             }),
             annotations: None,
+            // tronc 0.8.0 added these to `Tool`; neither applies to a
+            // synchronous messaging tool with an untyped result.
+            output_schema: None,
+            execution: None,
         }
     }
 
